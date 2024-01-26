@@ -5,6 +5,7 @@ from enigma import eServiceReference
 
 StreamServiceList = []
 
+
 class StreamService(Source):
 	def __init__(self, navcore):
 		Source.__init__(self)
@@ -36,7 +37,7 @@ class StreamService(Source):
 			print "[StreamService] has no service ref set"
 			return
 		print "[StreamService]e execBegin", self.ref.toString()
-		if SystemInfo["CanDoTranscodeAndPIP"]:
+		if SystemInfo["CanNotDoSimultaneousTranscodeAndPIP"]:
 			from Screens.InfoBar import InfoBar
 			if InfoBar.instance and hasattr(InfoBar.instance.session, 'pipshown') and InfoBar.instance.session.pipshown:
 				hasattr(InfoBar.instance, "showPiP") and InfoBar.instance.showPiP()

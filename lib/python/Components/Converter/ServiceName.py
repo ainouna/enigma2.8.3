@@ -4,7 +4,8 @@ from enigma import iServiceInformation, iPlayableService, iPlayableServicePtr, e
 from ServiceReference import resolveAlternate
 from Components.Element import cached
 
-class ServiceName(Converter, object):
+
+class ServiceName(Converter):
 	NAME = 0
 	PROVIDER = 1
 	REFERENCE = 2
@@ -40,7 +41,7 @@ class ServiceName(Converter, object):
 			name = ref and info.getName(ref)
 			if name is None:
 				name = info.getName()
-			return name.replace('\xc2\x86', '').replace('\xc2\x87', '')
+			return name.replace('\xc2\x86', '').replace('\xc2\x87', '').replace('_', ' ')
 		elif self.type == self.PROVIDER:
 			return info.getInfoString(iServiceInformation.sProvider)
 		elif self.type == self.REFERENCE or self.type == self.EDITREFERENCE and hasattr(self.source, "editmode") and self.source.editmode:

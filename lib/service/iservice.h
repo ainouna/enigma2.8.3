@@ -161,6 +161,7 @@ public:
 		: type(type), flags(flags), path(path)
 	{
 		memset(data, 0, sizeof(data));
+		number = 0;
 	}
 	eServiceReference(const std::string &string);
 	std::string toString() const;
@@ -389,7 +390,9 @@ public:
 		sLiveStreamDemuxId,
 		sBuffer,
 		sIsDedicated3D,
-		sHideVBI,
+		sCenterDVBSubs,
+
+		sGamma,
 
 		sUser = 0x100
 	};
@@ -408,8 +411,8 @@ So we move all enum's to own classes (with _ENUMS as name ending) and let our re
 class inherit from the *_ENUMS class. This *_ENUMS classes are normally exportet via swig to python.
 But in the python code we doesn't like to write iServiceInformation_ENUMS.sVideoType....
 we like to write iServiceInformation.sVideoType.
-So until swig have no Solution for this Problem we call in lib/python/Makefile.am a python script named
-enigma_py_patcher.py to remove the "_ENUMS" strings in enigma.py at all needed locations. */
+So until swig have no Solution for this Problem we call in lib/python/Makefile.inc a sed command
+to remove the "_ENUMS" strings in enigma.py at all needed locations. */
 
 class iServiceInformation: public iServiceInformation_ENUMS, public iObject
 {
@@ -426,7 +429,7 @@ public:
 	virtual ePtr<iServiceInfoContainer> getInfoObject(int w);
 	virtual ePtr<iDVBTransponderData> getTransponderData();
 	virtual void getAITApplications(std::map<int, std::string> &aitlist) {};
-	virtual void getCaIds(std::vector<int> &caids, std::vector<int> &ecmpids);
+	virtual void getCaIds(std::vector<int> &caids, std::vector<int> &ecmpids, std::vector<std::string> &ecmdatabytes);
 	virtual long long getFileSize();
 
 	virtual int setInfo(int w, int v);
@@ -449,6 +452,7 @@ public:
 		syncState,
 		frontendNumber,
 		signalQualitydB,
+		isUsbTuner,
 		frontendStatus,
 		snrValue,
 		frequency,
@@ -650,6 +654,19 @@ public:
 };
 SWIG_TEMPLATE_TYPEDEF(ePtr<iTimeshiftService>, iTimeshiftServicePtr);
 
+SWIG_IGNORE(iTapService);
+class iTapService: public iObject
+{
+#ifdef SWIG
+	iTapService();
+	~iTapService();
+#endif
+public:
+	virtual bool startTapToFD(int fd, const std::vector<int> &pids, int packetsize = 188)=0;
+	virtual void stopTapToFD()=0;
+};
+SWIG_TEMPLATE_TYPEDEF(ePtr<iTapService>, iTapServicePtr);
+
 	/* not related to eCueSheet */
 
 class iCueSheet_ENUMS
@@ -679,12 +696,12 @@ SWIG_TEMPLATE_TYPEDEF(ePtr<iCueSheet>, iCueSheetPtr);
 
 class PyList;
 
-class eDVBTeletextSubtitlePage;
-class eDVBSubtitlePage;
+struct eDVBTeletextSubtitlePage;
+struct eDVBSubtitlePage;
 struct ePangoSubtitlePage;
 class eRect;
-struct gRegion;
-struct gPixmap;
+class gRegion;
+class gPixmap;
 
 SWIG_IGNORE(iSubtitleUser);
 class iSubtitleUser
@@ -815,7 +832,8 @@ public:
 	virtual SWIG_VOID(RESULT) getServiceId(int &result) const = 0;
 	virtual SWIG_VOID(RESULT) getAdapterId(int &result) const = 0;
 	virtual SWIG_VOID(RESULT) getDemuxId(int &result) const = 0;
-	virtual SWIG_VOID(RESULT) getCaIds(std::vector<int> &caids, std::vector<int> &ecmpids) const = 0;
+	virtual SWIG_VOID(RESULT) getCaIds(std::vector<int> &caids, std::vector<int> &ecmpids, std::vector<std::string> &ecmdatabytes) const = 0;
+	virtual SWIG_VOID(RESULT) getDefaultAudioPid(int &result) const = 0;
 };
 
 class iStreamableService: public iObject
@@ -929,6 +947,10 @@ public:
 
 		evHBBTVInfo,
 
+		evVideoGammaChanged,
+
+		evFccFailed,
+
 		evUser = 0x100
 	};
 };
@@ -943,7 +965,7 @@ class iPlayableService: public iPlayableService_ENUMS, public iObject
 	friend class iServiceHandler;
 public:
 #ifndef SWIG
-	virtual RESULT connectEvent(const Slot2<void,iPlayableService*,int> &event, ePtr<eConnection> &connection)=0;
+	virtual RESULT connectEvent(const sigc::slot2<void,iPlayableService*,int> &event, ePtr<eConnection> &connection)=0;
 #endif
 	virtual RESULT start()=0;
 	virtual RESULT stop()=0;
@@ -957,6 +979,7 @@ public:
 	virtual SWIG_VOID(RESULT) subServices(ePtr<iSubserviceList> &SWIG_OUTPUT)=0;
 	virtual SWIG_VOID(RESULT) frontendInfo(ePtr<iFrontendInformation> &SWIG_OUTPUT)=0;
 	virtual SWIG_VOID(RESULT) timeshift(ePtr<iTimeshiftService> &SWIG_OUTPUT)=0;
+	virtual SWIG_VOID(RESULT) tap(ePtr<iTapService> &SWIG_OUTPUT)=0;
 	virtual SWIG_VOID(RESULT) cueSheet(ePtr<iCueSheet> &SWIG_OUTPUT)=0;
 	virtual SWIG_VOID(RESULT) subtitle(ePtr<iSubtitleOutput> &SWIG_OUTPUT)=0;
 	virtual SWIG_VOID(RESULT) audioDelay(ePtr<iAudioDelay> &SWIG_OUTPUT)=0;
@@ -964,6 +987,7 @@ public:
 	virtual SWIG_VOID(RESULT) stream(ePtr<iStreamableService> &SWIG_OUTPUT)=0;
 	virtual SWIG_VOID(RESULT) streamed(ePtr<iStreamedService> &SWIG_OUTPUT)=0;
 	virtual SWIG_VOID(RESULT) keys(ePtr<iServiceKeys> &SWIG_OUTPUT)=0;
+	virtual void setQpipMode(bool value, bool audio)=0;
 };
 SWIG_TEMPLATE_TYPEDEF(ePtr<iPlayableService>, iPlayableServicePtr);
 
@@ -985,6 +1009,8 @@ public:
 		evRecordFailed,
 		evRecordWriteError,
 		evNewEventInfo,
+		evTuneStart,
+		evPvrTuneStart,
 		evRecordAborted,
 		evGstRecordEnded,
 	};
@@ -1009,10 +1035,10 @@ class iRecordableService: public iRecordableService_ENUMS, public iObject
 #endif
 public:
 #ifndef SWIG
-	virtual RESULT connectEvent(const Slot2<void,iRecordableService*,int> &event, ePtr<eConnection> &connection)=0;
+	virtual RESULT connectEvent(const sigc::slot2<void,iRecordableService*,int> &event, ePtr<eConnection> &connection)=0;
 #endif
 	virtual SWIG_VOID(RESULT) getError(int &SWIG_OUTPUT)=0;
-	virtual RESULT prepare(const char *filename, time_t begTime=-1, time_t endTime=-1, int eit_event_id=-1, const char *name=0, const char *descr=0, const char *tags=0, bool descramble = true, bool recordecm = false)=0;
+	virtual RESULT prepare(const char *filename, time_t begTime=-1, time_t endTime=-1, int eit_event_id=-1, const char *name=0, const char *descr=0, const char *tags=0, bool descramble = true, bool recordecm = false, int packetsize = 188)=0;
 	virtual RESULT prepareStreaming(bool descramble = true, bool includeecm = false)=0;
 	virtual RESULT start(bool simulate=false)=0;
 	virtual RESULT stop()=0;

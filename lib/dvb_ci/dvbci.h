@@ -4,16 +4,17 @@
 #ifndef SWIG
 
 #include <lib/base/ebase.h>
+#include <lib/base/message.h>
+#include <lib/base/thread.h>
 #include <lib/service/iservice.h>
 #include <lib/python/python.h>
 #include <set>
 #include <queue>
 
-#include <lib/network/serversocket.h>
-
 class eDVBCISession;
 class eDVBCIApplicationManagerSession;
 class eDVBCICAManagerSession;
+class eDVBCICcSession;
 class eDVBCIMMISession;
 class eDVBServicePMTHandler;
 class eDVBCISlot;
@@ -40,7 +41,7 @@ typedef std::set<providerPair> providerSet;
 typedef std::set<uint16_t> caidSet;
 typedef std::set<eServiceReference> serviceSet;
 
-class eDVBCISlot: public iObject, public Object
+class eDVBCISlot: public iObject, public sigc::trackable
 {
 	friend class eDVBCIInterfaces;
 	DECLARE_REF(eDVBCISlot);
@@ -48,9 +49,11 @@ class eDVBCISlot: public iObject, public Object
 	int fd;
 	ePtr<eSocketNotifier> notifier;
 	int state;
+	int m_ci_version;
 	std::map<uint16_t, uint8_t> running_services;
 	eDVBCIApplicationManagerSession *application_manager;
 	eDVBCICAManagerSession *ca_manager;
+	eDVBCICcSession *cc_manager;
 	eDVBCIMMISession *mmi_session;
 	std::priority_queue<queueData> sendqueue;
 	caidSet possible_caids;
@@ -63,23 +66,14 @@ class eDVBCISlot: public iObject, public Object
 	bool user_mapped;
 	void data(int);
 	bool plugged;
-public:
-	enum {stateRemoved, stateInserted, stateInvalid, stateResetted};
-	eDVBCISlot(eMainloop *context, int nr);
-	~eDVBCISlot();
-
-	int send(const unsigned char *data, size_t len);
-
-	void setAppManager( eDVBCIApplicationManagerSession *session );
-	void setMMIManager( eDVBCIMMISession *session );
-	void setCAManager( eDVBCICAManagerSession *session );
+	eMainloop *m_context;
 
 	eDVBCIApplicationManagerSession *getAppManager() { return application_manager; }
 	eDVBCIMMISession *getMMIManager() { return mmi_session; }
 	eDVBCICAManagerSession *getCAManager() { return ca_manager; }
+	eDVBCICcSession *getCCManager() { return cc_manager; }
 
 	int getState() { return state; }
-	int getSlotID();
 	int reset();
 	int startMMI();
 	int stopMMI();
@@ -89,10 +83,29 @@ public:
 	int getMMIState();
 	int sendCAPMT(eDVBServicePMTHandler *ptr, const std::vector<uint16_t> &caids=std::vector<uint16_t>());
 	void removeService(uint16_t program_number=0xFFFF);
-	int getNumOfServices() { return running_services.size(); }
 	int setSource(const std::string &source);
 	int setClockRate(int);
+	void determineCIVersion();
+	int setEnabled(bool);
 	static std::string getTunerLetter(int tuner_no) { return std::string(1, char(65 + tuner_no)); }
+public:
+	enum {stateRemoved, stateInserted, stateInvalid, stateResetted, stateDisabled};
+	enum {versionUnknown = -1, versionCI = 0, versionCIPlus1 = 1, versionCIPlus2 = 2};
+	eDVBCISlot(eMainloop *context, int nr);
+	~eDVBCISlot();
+	void closeDevice();
+	void openDevice();
+
+	int send(const unsigned char *data, size_t len);
+
+	void setAppManager( eDVBCIApplicationManagerSession *session );
+	void setMMIManager( eDVBCIMMISession *session );
+	void setCAManager( eDVBCICAManagerSession *session );
+	void setCCManager( eDVBCICcSession *session );
+
+	int getSlotID();
+	int getNumOfServices();
+	int getVersion();
 };
 
 struct CIPmtHandler
@@ -115,77 +128,66 @@ typedef std::list<CIPmtHandler> PMTHandlerList;
 
 #endif // SWIG
 
-#ifndef SWIG
-class eCIClient : public eUnixDomainSocket
+class eDVBCIInterfaces: public eMainloop, private eThread
 {
-	struct ciplus_header
+private:
+	typedef enum
 	{
-		unsigned int magic;
-		unsigned int cmd;
-		unsigned int size;
-	}__attribute__((packed));
+		interface_none,
+		interface_use_dvr,
+		interface_use_pvr,
+	} stream_interface_t;
 
-	struct ciplus_message
+	typedef enum
 	{
-		unsigned int slot;
-		unsigned long idtag;
-		unsigned char tag[4];
-		unsigned int session;
-		unsigned int size;
-	}__attribute__((packed));
+		finish_none,
+		finish_use_tuner_a,
+		finish_use_pvr_none,
+		finish_use_none,
+	} stream_finish_mode_t;
 
-	unsigned int receivedLength;
-	unsigned int receivedCmd;
-	unsigned int receivedCmdSize;
-	unsigned char *receivedData;
-
-	ciplus_header header;
-protected:
-	eDVBCIInterfaces *parent;
-	void connectionLost();
-	void dataAvailable();
-public:
-	eCIClient(eDVBCIInterfaces *handler, int socket);
-	void sendData(int cmd, int slot, int session, unsigned long idtag, unsigned char *tag, unsigned char *data, int len);
-
-	enum
-	{
-		CIPLUSHELPER_SESSION_CREATE = 1000,
-		CIPLUSHELPER_SESSION_CLOSE = 1001,
-		CIPLUSHELPER_RECV_APDU = 1002,
-		CIPLUSHELPER_DOACTION = 1003,
-		CIPLUSHELPER_STATE_CHANGED = 1004,
-		CIPLUSHELPER_DATA = 1005,
-		CIPLUSHELPER_MAGIC = 987654321,
-	};
-};
-
-class eDVBCIInterfaces: public eServerSocket
-#else
-class eDVBCIInterfaces
-#endif
-{
 	DECLARE_REF(eDVBCIInterfaces);
+
+	stream_interface_t m_stream_interface;
+	stream_finish_mode_t m_stream_finish_mode;
+
 	static eDVBCIInterfaces *instance;
 	eSmartPtrList<eDVBCISlot> m_slots;
-	PMTHandlerList m_pmt_handlers; 
+	eDVBCISlot *getSlot(int slotid);
+	PMTHandlerList m_pmt_handlers;
+	std::string m_language;
+	eFixedMessagePump<int> m_messagepump_thread; // message handling in the thread
+	eFixedMessagePump<int> m_messagepump_main; // message handling in the e2 mainloop
+	ePtr<eTimer> m_runTimer; // workaround to interrupt thread mainloop as some ci drivers don't implement poll properly
+	static pthread_mutex_t m_pmt_handler_lock;
+	bool m_ciplus_routing_active;
+	int m_ciplus_routing_tunernum;
+	std::string m_ciplus_routing_input;
+	std::string m_ciplus_routing_ci_input;
 
-	eCIClient *client;
+	int sendCAPMT(int slot);
+
+	void thread();
+	void gotMessageThread(const int &message);
+	void gotMessageMain(const int &message);
+
 #ifndef SWIG
 public:
 #endif
 	eDVBCIInterfaces();
 	~eDVBCIInterfaces();
 
-	eDVBCISlot *getSlot(int slotid);
+	static pthread_mutex_t m_slot_lock;
 
 	void addPMTHandler(eDVBServicePMTHandler *pmthandler);
 	void removePMTHandler(eDVBServicePMTHandler *pmthandler);
 	void recheckPMTHandlers();
+	void executeRecheckPMTHandlersInMainloop();
 	void gotPMT(eDVBServicePMTHandler *pmthandler);
 	void ciRemoved(eDVBCISlot *slot);
 	int getSlotState(int slot);
 
+	int setCIEnabled(int slot, bool enabled);
 	int reset(int slot);
 	int initialize(int slot);
 	int startMMI(int slot);
@@ -194,13 +196,12 @@ public:
 	int answerEnq(int slot, char *value);
 	int cancelEnq(int slot);
 	int getMMIState(int slot);
-	int sendCAPMT(int slot);
 	int setInputSource(int tunerno, const std::string &source);
 	int setCIClockRate(int slot, int rate);
-
-	void newConnection(int socket);
-	void connectionLost();
-
+	void setCIPlusRouting(int slotid);
+	void revertCIPlusRouting(int slotid);
+	bool canDescrambleMultipleServices(eDVBCISlot* slot);
+	std::string getLanguage() { return m_language; };
 #ifdef SWIG
 public:
 #endif
@@ -209,9 +210,32 @@ public:
 	PyObject *getDescrambleRules(int slotid);
 	RESULT setDescrambleRules(int slotid, SWIG_PYOBJECT(ePyObject) );
 	PyObject *readCICaIds(int slotid);
+	struct Message
+	{
+		enum
+		{
+			slotStateChanged,
+			mmiSessionDestroyed,
+			mmiDataReceived,
+			appNameChanged
+		};
+		int m_type;
+		int m_slotid;
+		int m_state;
+		unsigned char m_tag[3];
+		unsigned char m_data[4096];
+		int m_len;
+		std::string m_appName;
+		Message(int type, int slotid): m_type(type), m_slotid(slotid) {};
+		Message(int type, int slotid, int state): m_type(type), m_slotid(slotid), m_state(state) {};
+		Message(int type, int slotid, std::string appName): m_type(type), m_slotid(slotid), m_appName(appName) {};
+		Message(int type, int slotid, const unsigned char* tag, unsigned char* data, int len): m_type(type), m_slotid(slotid), m_len(len)
+		{
+			memcpy(m_tag, tag, 3);
+			memcpy(m_data, data, len);
+		};
+	};
 
-	void sendDataToHelper(int cmd, int slot, int session, unsigned long idtag, unsigned char *tag, unsigned char *data, int len);
-	bool isClientConnected();
 };
 
 #endif

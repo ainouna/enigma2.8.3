@@ -117,7 +117,7 @@ void DumpUnfreed();
 extern int debugLvl;
 
 void CHECKFORMAT eDebugImpl(int flags, const char*, ...);
-enum { lvlDebug=4, lvlInfo=3, lvlWarning=2, lvlError=1, lvlFatal=0 };
+enum { lvlTrace=5, lvlDebug=4, lvlInfo=3, lvlWarning=2, lvlError=1, lvlFatal=0 };
 
 #define DEFAULT_DEBUG_LVL  4
 
@@ -125,7 +125,7 @@ enum { lvlDebug=4, lvlInfo=3, lvlWarning=2, lvlError=1, lvlFatal=0 };
 # define MAX_DEBUG_LEVEL 0
 #else
 # ifndef MAX_DEBUG_LEVEL
-#  define MAX_DEBUG_LEVEL 4
+#  define MAX_DEBUG_LEVEL 5
 # endif
 #endif
 
@@ -144,15 +144,19 @@ enum { lvlDebug=4, lvlInfo=3, lvlWarning=2, lvlError=1, lvlFatal=0 };
 #define eFatal(...)			eDebugLow(lvlFatal, _DBGFLG_FATAL, __VA_ARGS__)
 #define eLog(lvl, ...)			eDebugLow(lvl,        0,                 ##__VA_ARGS__)
 #define eLogNoNewLineStart(lvl, ...)	eDebugLow(lvl,        _DBGFLG_NONEWLINE, ##__VA_ARGS__)
-#define eLogNoNewLine(lvl, ...)	eDebugLow(lvl,        _DBGFLG_NOTIME | _DBGFLG_NONEWLINE, ##__VA_ARGS__)
+#define eLogNoNewLine(lvl, ...)		eDebugLow(lvl,        _DBGFLG_NOTIME | _DBGFLG_NONEWLINE, ##__VA_ARGS__)
 #define eWarning(...)			eDebugLow(lvlWarning, 0,                   __VA_ARGS__)
 #define eDebug(...)			eDebugLow(lvlDebug,   0,                   __VA_ARGS__)
 #define eDebugNoNewLineStart(...)	eDebugLow(lvlDebug,   _DBGFLG_NONEWLINE,   __VA_ARGS__)
 #define eDebugNoNewLine(...)		eDebugLow(lvlDebug,   _DBGFLG_NOTIME | _DBGFLG_NONEWLINE, __VA_ARGS__)
+#define eTrace(...)			eDebugLow(lvlTrace,        0,                 ##__VA_ARGS__)
+#define eTraceNoNewLineStart(...)	eDebugLow(lvlTrace, _DBGFLG_NONEWLINE,                 ##__VA_ARGS__)
+#define eTraceNoNewLine(...)		eDebugLow(lvlTrace, _DBGFLG_NOTIME | _DBGFLG_NONEWLINE, ##__VA_ARGS__)
 #define ASSERT(x) { if (!(x)) eFatal("%s:%d ASSERTION %s FAILED!", __FILE__, __LINE__, #x); }
 
 #endif // SWIG
 
 void ePythonOutput(const char *, int lvl = lvlDebug);
+int eGetEnigmaDebugLvl();
 
 #endif // __E_ERROR__

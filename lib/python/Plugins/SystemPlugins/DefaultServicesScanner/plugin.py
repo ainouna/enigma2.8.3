@@ -7,20 +7,21 @@ from Tools.Directories import resolveFilename, SCOPE_CONFIG, copyfile
 from os import unlink
 from enigma import eTimer, eDVBDB
 
+
 class DefaultServiceScan(ServiceScan):
 	skin = """
 		<screen position="150,115" size="420,390" title="Service Scan">
-		<widget source="FrontendInfo" render="Pixmap" pixmap="skin_default/icons/scan-s.png" position="5,5" size="64,64" transparent="1" alphatest="on">
+		<widget source="FrontendInfo" render="Pixmap" pixmap="icons/scan-s.png" position="5,5" size="64,64" transparent="1" alphatest="on">
 			<convert type="FrontendInfo">TYPE</convert>
 			<convert type="ValueRange">0,0</convert>
 			<convert type="ConditionalShowHide" />
 		</widget>
-		<widget source="FrontendInfo" render="Pixmap" pixmap="skin_default/icons/scan-c.png" position="5,5" size="64,64" transparent="1" alphatest="on">
+		<widget source="FrontendInfo" render="Pixmap" pixmap="icons/scan-c.png" position="5,5" size="64,64" transparent="1" alphatest="on">
 			<convert type="FrontendInfo">TYPE</convert>
 			<convert type="ValueRange">1,1</convert>
 			<convert type="ConditionalShowHide" />
 		</widget>
-		<widget source="FrontendInfo" render="Pixmap" pixmap="skin_default/icons/scan-t.png" position="5,5" size="64,64" transparent="1" alphatest="on">
+		<widget source="FrontendInfo" render="Pixmap" pixmap="icons/scan-t.png" position="5,5" size="64,64" transparent="1" alphatest="on">
 			<convert type="FrontendInfo">TYPE</convert>
 			<convert type="ValueRange">2,2</convert>
 			<convert type="ConditionalShowHide" />
@@ -29,13 +30,13 @@ class DefaultServiceScan(ServiceScan):
 		<widget name="transponder" position="80,40" size="330,20" font="Regular;20" />
 		<widget name="scan_state" position="10,80" zPosition="2" size="400,20" font="Regular;18" />
 		<widget name="pass" position="10,80" size="400,20" font="Regular;18" />
-		<widget name="scan_progress" position="10,105" size="400,15" pixmap="skin_default/progress_big.png" borderWidth="2" borderColor="#cccccc" />
+		<widget name="scan_progress" position="10,105" size="400,15" pixmap="progress_big.png" borderWidth="2" borderColor="#cccccc" />
 		<widget name="servicelist" position="10,135" size="400,265" selectionDisabled="1" />
 	</screen>"""
 
 	def __init__(self, session, scanList):
 		try:
-			unlink(resolveFilename(SCOPE_CONFIG) + "/lamedb");
+			unlink(resolveFilename(SCOPE_CONFIG) + "/lamedb")
 		except OSError:
 			pass
 		db = eDVBDB.getInstance()
@@ -45,6 +46,7 @@ class DefaultServiceScan(ServiceScan):
 		self.timer.callback.append(self.ok)
 		self.timer.start(1000)
 
+
 class DefaultServicesScannerPlugin(ScanSetup):
 	skin = """
 		<screen position="100,115" size="520,390" title="Service scan">
@@ -52,7 +54,7 @@ class DefaultServicesScannerPlugin(ScanSetup):
 			<widget name="introduction" position="10,365" size="500,25" font="Regular;20" halign="center" />
 		</screen>"""
 
-	def __init__(self, session, args = None):
+	def __init__(self, session, args=None):
 		ScanSetup.__init__(self, session)
 		# backup lamedb
 		confdir = resolveFilename(SCOPE_CONFIG)
@@ -74,7 +76,7 @@ class DefaultServicesScannerPlugin(ScanSetup):
 		print "runScan"
 		self.keyGo()
 
-	def startScan(self, tlist, flags, feid, networkid = 0):
+	def startScan(self, tlist, flags, feid, networkid=0):
 		print "startScan"
 		if len(tlist):
 			# flags |= eComponentScan.scanSearchBAT
@@ -82,7 +84,7 @@ class DefaultServicesScannerPlugin(ScanSetup):
 		else:
 			self.session.openWithCallback(self.scanFinished, MessageBox, _("Nothing to scan!\nPlease setup your tuner settings before you start a service scan."), MessageBox.TYPE_ERROR)
 
-	def scanFinished(self, value = None):
+	def scanFinished(self, value=None):
 		print "finished"
 		print "self.scanIndex:", self.scanIndex
 		db = eDVBDB.getInstance()
@@ -123,8 +125,10 @@ class DefaultServicesScannerPlugin(ScanSetup):
 			self.selectSat(self.scanIndex)
 			self.keyGo()
 
+
 def DefaultServicesScannerMain(session, **kwargs):
 	session.open(DefaultServicesScannerPlugin)
 
+
 def Plugins(**kwargs):
-	return PluginDescriptor(name=_("Default Services Scanner"), description=_("Scans default lamedbs sorted by satellite with a connected dish positioner"), where = PluginDescriptor.WHERE_PLUGINMENU, needsRestart = False, fnc=DefaultServicesScannerMain)
+	return PluginDescriptor(name=_("Default Services Scanner"), description=_("Scans default lamedbs sorted by satellite with a connected dish positioner"), where=PluginDescriptor.WHERE_PLUGINMENU, needsRestart=False, fnc=DefaultServicesScannerMain)

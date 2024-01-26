@@ -29,21 +29,19 @@ dist_install_DATA = \
 	epg_more.png \
 	epg_next.png \
 	epg_now.png \
-	expandable.png \
-	expandable-plugins.png \
-	expanded.png \
-	expanded-plugins.png \
 	info-bg_mp.png \
 	info-bg.png \
 	mediaplayer_bg.png \
 	mute.png \
 	nim_active.png \
 	no_coverArt.png \
+	noprev.png \
 	overscan1280x720.png \
 	overscan1920x1080.png \
 	picon_default.png \
 	position_arrow.png \
 	position_pointer.png \
+	prev.png \
 	progress_bg.png \
 	progress_big.png \
 	progress_medium.png \
@@ -56,26 +54,11 @@ dist_install_DATA = \
 	screensaverpicture.png \
 	screws_mp.png \
 	screws.png \
+	skin.xml \
 	sleeptimer.png \
 	testscreen.png \
 	timeline-now.png \
 	timeline.png \
 	unhandled-key.png \
-	verticalline.png \
-	verticalline-plugins.png \
-	vkey_all.png \
-	vkey_backspace.png \
-	vkey_bg.png \
-	vkey_clr.png \
-	vkey_esc.png \
-	vkey_icon.png \
-	vkey_left.png \
-	vkey_ok.png \
-	vkey_right.png \
-	vkey_sel.png \
-	vkey_shift.png \
-	vkey_shift_sel.png \
-	vkey_space.png \
-	vkey_text.png \
 	volume.png \
 	wizard.png

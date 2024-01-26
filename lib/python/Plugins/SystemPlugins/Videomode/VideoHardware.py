@@ -1,5 +1,5 @@
 from Components.config import config, ConfigSelection, ConfigSubDict, ConfigYesNo
-
+from Components.SystemInfo import SystemInfo
 from Tools.CList import CList
 from Tools.HardwareInfo import HardwareInfo
 import os
@@ -8,75 +8,86 @@ import os
 # It generates hotplug events, and gives you the list of
 # available and preferred modes, as well as handling the currently
 # selected mode. No other strict checking is done.
+
+config.av.edid_override = ConfigYesNo(default=True)
+
+
 class VideoHardware:
-	rates = { } # high-level, use selectable modes.
+	rates = {} # high-level, use selectable modes.
 
-	modes = { }  # a list of (high-level) modes for a certain port.
+	modes = {}  # a list of (high-level) modes for a certain port.
 
-	rates["PAL"] =			{ "50Hz":	{ 50: "pal" },
-								"60Hz":		{ 60: "pal60" },
-								"multi":	{ 50: "pal", 60: "pal60" } }
+	rates["PAL"] = {"50Hz": {50: "pal"},
+								"60Hz": {60: "pal60"},
+								"multi": {50: "pal", 60: "pal60"}}
 
-	rates["NTSC"] =			{ "60Hz": 	{ 60: "ntsc" } }
+	rates["NTSC"] = {"60Hz": {60: "ntsc"}}
 
-	rates["Multi"] =		{ "multi": 	{ 50: "pal", 60: "ntsc" } }
+	rates["Multi"] = {"multi": {50: "pal", 60: "ntsc"}}
 
-	rates["480i"] =			{ "60Hz": 	{ 60: "480i" } }
+	rates["480i"] = {"60Hz": {60: "480i"}}
 
-	rates["576i"] =			{ "50Hz": 	{ 50: "576i" } }
+	rates["576i"] = {"50Hz": {50: "576i"}}
 
-	rates["480p"] =			{ "60Hz": 	{ 60: "480p" } }
+	rates["480p"] = {"60Hz": {60: "480p"}}
 
-	rates["576p"] =			{ "50Hz": 	{ 50: "576p" } }
+	rates["576p"] = {"50Hz": {50: "576p"}}
 
-	rates["720p"] =			{ "50Hz": 	{ 50: "720p50" },
-								"60Hz": 	{ 60: "720p" },
-								"multi": 	{ 50: "720p50", 60: "720p" },
-								"multi (50/60/24p)": {50: "720p50", 60: "720p", 24: "720p24" } }
+	rates["720p"] = {"50Hz": {50: "720p50"},
+								"60Hz": {60: "720p"},
+								"multi": {50: "720p50", 60: "720p"},
+								"auto": {50: "720p50", 60: "720p", 24: "720p24"}}
 
-	rates["1080i"] =		{ "50Hz":	{ 50: "1080i50" },
-								"60Hz":		{ 60: "1080i" },
-								"multi":	{ 50: "1080i50", 60: "1080i" },
-								"multi (50/60/24p)": {50: "1080i50", 60: "1080i", 24: "1080p24" } }
+	rates["1080i"] = {"50Hz": {50: "1080i50"},
+								"60Hz": {60: "1080i"},
+								"multi": {50: "1080i50", 60: "1080i"},
+								"auto": {50: "1080i50", 60: "1080i", 24: "1080p24"}}
 
-	rates["1080p"] =		{ "50Hz":	{ 50: "1080p50" },
-								"60Hz":		{ 60: "1080p" },
-								"multi":	{ 50: "1080p50", 60: "1080p" },
-								"multi (50/60/24p)": {50: "1080p50", 60: "1080p", 24: "1080p24" } }
+	rates["1080p"] = {"50Hz": {50: "1080p50"},
+								"60Hz": {60: "1080p"},
+								"multi": {50: "1080p50", 60: "1080p"},
+								"auto": {50: "1080p50", 60: "1080p", 24: "1080p24"}}
 
-	rates["2160p30"] =		{ "25Hz":	{ 50: "2160p25" },
-								"30Hz":		{ 60: "2160p30" },
-								"multi": { 50: "2160p25", 60: "2160p30" },
-								"multi (25/30/24p)": { 50: "2160p25", 60: "2160p30", 24: "2160p24" } }
+	rates["2160p30"] = {"25Hz": {50: "2160p25"},
+								"30Hz": {60: "2160p30"},
+								"multi": {50: "2160p25", 60: "2160p30"},
+								"auto": {50: "2160p25", 60: "2160p30", 24: "2160p24"}}
 
-	rates["2160p"] =		{ "50Hz":	{ 50: "2160p50" },
-								"60Hz":		{ 60: "2160p" },
-								"multi":	{ 50: "2160p50", 60: "2160p" }, 
-								"multi (50/60/24p)": {50: "2160p50", 60: "2160p", 24: "2160p24" }}
+	rates["2160p"] = {"50Hz": {50: "2160p50"},
+								"60Hz": {60: "2160p"},
+								"multi": {50: "2160p50", 60: "2160p"},
+								"auto": {50: "2160p50", 60: "2160p", 24: "2160p24"}}
 
 	rates["PC"] = {
-		"1024x768": { 60: "1024x768" }, # not possible on DM7025
-		"800x600" : { 60: "800x600" },  # also not possible
-		"720x480" : { 60: "720x480" },
-		"720x576" : { 60: "720x576" },
-		"1280x720": { 60: "1280x720" },
-		"1280x720 multi": { 50: "1280x720_50", 60: "1280x720" },
-		"1920x1080": { 60: "1920x1080"},
-		"1920x1080 multi": { 50: "1920x1080", 60: "1920x1080_50" },
-		"1280x1024" : { 60: "1280x1024"},
-		"1366x768" : { 60: "1366x768"},
-		"1366x768 multi" : { 50: "1366x768", 60: "1366x768_50" },
-		"1280x768": { 60: "1280x768" },
-		"640x480" : { 60: "640x480" }
+		"1024x768": {60: "1024x768"}, # not possible on DM7025
+		"800x600": {60: "800x600"},  # also not possible
+		"720x480": {60: "720x480"},
+		"720x576": {60: "720x576"},
+		"1280x720": {60: "1280x720"},
+		"1280x720 multi": {50: "1280x720_50", 60: "1280x720"},
+		"1920x1080": {60: "1920x1080"},
+		"1920x1080 multi": {50: "1920x1080", 60: "1920x1080_50"},
+		"1280x1024": {60: "1280x1024"},
+		"1366x768": {60: "1366x768"},
+		"1366x768 multi": {50: "1366x768", 60: "1366x768_50"},
+		"1280x768": {60: "1280x768"},
+		"640x480": {60: "640x480"}
 	}
 
-	modes["Scart"] = ["PAL", "NTSC", "Multi"]
-	modes["YPbPr"] = ["720p", "1080i", "576p", "480p", "576i", "480i"]
-	modes["DVI"] = ["720p", "1080p", "2160p", "2160p30", "1080i", "576p", "480p", "576i", "480i"]
+	if SystemInfo["HasScart"]:
+		modes["Scart"] = ["PAL", "NTSC", "Multi"]
+	elif SystemInfo["HasComposite"]:
+		modes["RCA"] = ["576i", "PAL", "NTSC", "Multi"]
+	if SystemInfo["HasYPbPr"]:
+		modes["YPbPr"] = ["720p", "1080i", "576p", "480p", "576i", "480i"]
+	if SystemInfo["Has2160p"]:
+		modes["DVI"] = ["720p", "1080p", "2160p", "1080i", "576p", "480p", "576i", "480i"]
+	else:
+		modes["DVI"] = ["720p", "1080p", "2160p", "2160p30", "1080i", "576p", "480p", "576i", "480i"]
 	modes["DVI-PC"] = ["PC"]
 
 	def getOutputAspect(self):
-		ret = (16,9)
+		ret = (16, 9)
 		port = config.av.videoport.value
 		if port not in config.av.videomode:
 			print "[VideoHardware] current port not available in getOutputAspect!!! force 16:9"
@@ -91,26 +102,26 @@ class VideoHardware:
 				else:
 					aspect = {"16_9": "16:9", "16_10": "16:10"}[config.av.aspect.value]
 					if aspect == "16:10":
-						ret = (16,10)
+						ret = (16, 10)
 			elif is_auto:
 				try:
 					aspect_str = open("/proc/stb/vmpeg/0/aspect", "r").read()
 					if aspect_str == "1": # 4:3
-						ret = (4,3)
+						ret = (4, 3)
 				except IOError:
 					pass
 			else:  # 4:3
-				ret = (4,3)
+				ret = (4, 3)
 		return ret
 
 	def __init__(self):
-		self.last_modes_preferred =  [ ]
+		self.last_modes_preferred = []
 		self.on_hotplug = CList()
 		self.current_mode = None
 		self.current_port = None
 
 		self.readAvailableModes()
-		self.is24hzAvailable()
+		self.readPreferredModes()
 		self.widescreen_modes = set(["720p", "1080i", "1080p", "2160p", "2160p30"]).intersection(*[self.modes_available])
 
 		if "DVI-PC" in self.modes and not self.getModeList("DVI-PC"):
@@ -121,13 +132,12 @@ class VideoHardware:
 			del self.modes["Scart"]
 
 		self.createConfig()
-		self.readPreferredModes()
 
 		# take over old AVSwitch component :)
 		from Components.AVSwitch import AVSwitch
-		config.av.aspectratio.notifiers = [ ]
-		config.av.tvsystem.notifiers = [ ]
-		config.av.wss.notifiers = [ ]
+		config.av.aspectratio.notifiers = []
+		config.av.tvsystem.notifiers = []
+		config.av.wss.notifiers = []
 		AVSwitch.getOutputAspect = self.getOutputAspect
 
 		config.av.aspect.addNotifier(self.updateAspect)
@@ -140,42 +150,44 @@ class VideoHardware:
 			modes = open("/proc/stb/video/videomode_choices").read()[:-1]
 		except IOError:
 			print "[VideoHardware] couldn't read available videomodes."
-			self.modes_available = [ ]
+			self.modes_available = []
 			return
 		self.modes_available = modes.split(' ')
 
 	def readPreferredModes(self):
-		try:
-			modes = open("/proc/stb/video/videomode_preferred").read()[:-1]
-			self.modes_preferred = modes.split(' ')
-		except IOError:
-			print "[VideoHardware] reading preferred modes failed, using all modes"
+		if config.av.edid_override.value == False:
+			try:
+				modes = open("/proc/stb/video/videomode_preferred").read()[:-1]
+				self.modes_preferred = modes.split(' ')
+			except IOError:
+				print "[VideoHardware] reading preferred modes failed, using all video modes"
+				self.modes_preferred = self.modes_available
+
+			if len(self.modes_preferred) <= 1:
+				self.modes_preferred = self.modes_available
+				print "[VideoHardware] reading preferred modes is empty, using all video modes"
+		else:
 			self.modes_preferred = self.modes_available
+			print "[VideoHardware] reading preferred modes override, using all video modes"
 
-		if self.modes_preferred != self.last_modes_preferred:
-			self.last_modes_preferred = self.modes_preferred
-			print "[VideoHardware] hotplug on dvi"
-			self.on_hotplug("DVI") # must be DVI
-
-	def is24hzAvailable(self):
-		try:
-			self.has24pAvailable = os.access("/proc/stb/video/videomode_24hz", os.W_OK) and True or False
-		except IOError:
-			print "[VideoHardware] failed to read video choices 24hz ."
-			self.has24pAvailable = False
+		self.last_modes_preferred = self.modes_preferred
 
 	# check if a high-level mode with a given rate is available.
 	def isModeAvailable(self, port, mode, rate):
 		rate = self.rates[mode][rate]
 		for mode in rate.values():
-			if mode not in self.modes_available:
-				return False
+			if port == "DVI":
+				if mode not in self.modes_preferred:
+					return False
+			else:
+				if mode not in self.modes_available:
+					return False
 		return True
 
 	def isWidescreenMode(self, port, mode):
 		return mode in self.widescreen_modes
 
-	def setMode(self, port, mode, rate, force = None):
+	def setMode(self, port, mode, rate, force=None):
 		print "[VideoHardware] setMode - port:", port, "mode:", mode, "rate:", rate
 		# we can ignore "port"
 		self.current_mode = mode
@@ -210,7 +222,7 @@ class VideoHardware:
 		except IOError:
 			print "[VideoHardware] writing initial videomode to /etc/videomode failed."
 
-		if self.has24pAvailable:
+		if SystemInfo["Has24hz"]:
 			try:
 				open("/proc/stb/video/videomode_24hz", "w").write(mode_24)
 			except IOError:
@@ -246,14 +258,14 @@ class VideoHardware:
 	# get a list with all modes, with all rates, for a given port.
 	def getModeList(self, port):
 		print "[VideoHardware] getModeList for port", port
-		res = [ ]
+		res = []
 		for mode in self.modes[port]:
 			# list all rates which are completely valid
 			rates = [rate for rate in self.rates[mode] if self.isModeAvailable(port, mode, rate)]
 
 			# if at least one rate is ok, add this mode
 			if len(rates):
-				res.append( (mode, rates) )
+				res.append((mode, rates))
 		return res
 
 	def createConfig(self, *args):
@@ -276,17 +288,17 @@ class VideoHardware:
 			# create list of available modes
 			modes = self.getModeList(port)
 			if len(modes):
-				config.av.videomode[port] = ConfigSelection(choices = [mode for (mode, rates) in modes])
+				config.av.videomode[port] = ConfigSelection(choices=[mode for (mode, rates) in modes])
 			for (mode, rates) in modes:
 				ratelist = []
 				for rate in rates:
-					if rate in ("multi (50/60/24p)", "multi (25/30/24p)"):
-						if self.has24pAvailable:
+					if rate in ("auto"):
+						if SystemInfo["Has24hz"]:
 							ratelist.append((rate, rate))
 					else:
 						ratelist.append((rate, rate))
-				config.av.videorate[mode] = ConfigSelection(choices = ratelist)
-		config.av.videoport = ConfigSelection(choices = lst)
+				config.av.videorate[mode] = ConfigSelection(choices=ratelist)
+		config.av.videoport = ConfigSelection(choices=lst)
 
 	def setConfiguredMode(self):
 		port = config.av.videoport.value
@@ -341,16 +353,19 @@ class VideoHardware:
 				aspect = "16:9"
 			else:
 				aspect = {"16_9": "16:9", "16_10": "16:10"}[config.av.aspect.value]
-			policy_choices = {"pillarbox": "panscan", "panscan": "letterbox", "nonlinear": "nonlinear", "scale": "bestfit", "auto": "bestfit"}
+			policy_choices = {"pillarbox": "panscan", "panscan": "letterbox", "nonlinear": "nonlinear", "scale": "bestfit", "full": "full", "auto": "auto"}
 			policy = policy_choices[config.av.policy_43.value]
-			policy2_choices = {"letterbox": "letterbox", "panscan": "panscan", "scale": "bestfit", "auto": "bestfit"}
+			policy2_choices = {"letterbox": "letterbox", "panscan": "panscan", "scale": "bestfit", "full": "full", "auto": "auto"}
 			policy2 = policy2_choices[config.av.policy_169.value]
 		elif is_auto:
 			aspect = "any"
-			policy = "bestfit"
+			if "auto" in config.av.policy_43.choices:
+				policy = "auto"
+			else:
+				policy = "bestfit"
 		else:
 			aspect = "4:3"
-			policy = {"letterbox": "letterbox", "panscan": "panscan", "scale": "bestfit", "auto": "bestfit"}[config.av.policy_169.value]
+			policy = {"letterbox": "letterbox", "panscan": "panscan", "scale": "bestfit", "full": "full", "auto": "auto"}[config.av.policy_169.value]
 
 		if not config.av.wss.value:
 			wss = "auto(4:3_off)"
@@ -360,12 +375,15 @@ class VideoHardware:
 		print "[VideoHardware] -> setting aspect, policy, policy2, wss", aspect, policy, policy2, wss
 		open("/proc/stb/video/aspect", "w").write(aspect)
 		open("/proc/stb/video/policy", "w").write(policy)
-		open("/proc/stb/denc/0/wss", "w").write(wss)
+		try:
+			open("/proc/stb/denc/0/wss", "w").write(wss)
+		except IOError:
+			pass
 		try:
 			open("/proc/stb/video/policy2", "w").write(policy2)
 		except IOError:
 			pass
 
-config.av.edid_override = ConfigYesNo(default = False)
+
 video_hw = VideoHardware()
 video_hw.setConfiguredMode()

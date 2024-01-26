@@ -1,15 +1,15 @@
-from HTMLComponent import HTMLComponent
 from GUIComponent import GUIComponent
 
 from enigma import eListboxPythonStringContent, eListbox
 
-class MenuList(HTMLComponent, GUIComponent):
+
+class MenuList(GUIComponent):
 	def __init__(self, list, enableWrapAround=True, content=eListboxPythonStringContent):
 		GUIComponent.__init__(self)
 		self.list = list
 		self.l = content()
 		self.l.setList(self.list)
-		self.onSelectionChanged = [ ]
+		self.onSelectionChanged = []
 		self.enableWrapAround = enableWrapAround
 
 	def getCurrent(self):

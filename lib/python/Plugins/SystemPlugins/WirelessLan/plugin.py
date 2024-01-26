@@ -23,17 +23,17 @@ list = ["Unencrypted", "WEP", "WPA", "WPA/WPA2", "WPA2"]
 weplist = ["ASCII", "HEX"]
 
 config.plugins.wlan = ConfigSubsection()
-config.plugins.wlan.essid = NoSave(ConfigText(default = "", fixed_size = False))
-config.plugins.wlan.hiddenessid = NoSave(ConfigYesNo(default = False))
-config.plugins.wlan.encryption = NoSave(ConfigSelection(list, default = "WPA2"))
-config.plugins.wlan.wepkeytype = NoSave(ConfigSelection(weplist, default = "ASCII"))
-config.plugins.wlan.psk = NoSave(ConfigPassword(default = "", fixed_size = False))
+config.plugins.wlan.essid = NoSave(ConfigText(default="", fixed_size=False))
+config.plugins.wlan.hiddenessid = NoSave(ConfigYesNo(default=False))
+config.plugins.wlan.encryption = NoSave(ConfigSelection(list, default="WPA2"))
+config.plugins.wlan.wepkeytype = NoSave(ConfigSelection(weplist, default="ASCII"))
+config.plugins.wlan.psk = NoSave(ConfigPassword(default="", fixed_size=False))
 
 
 class WlanStatus(Screen):
 	skin = """
 		<screen name="WlanStatus" position="center,center" size="560,400" title="Wireless network status" >
-			<ePixmap pixmap="skin_default/buttons/red.png" position="0,0" size="140,40" alphatest="on" />
+			<ePixmap pixmap="buttons/red.png" position="0,0" size="140,40" alphatest="on" />
 			<widget source="key_red" render="Label" position="0,0" zPosition="1" size="140,40" font="Regular;20" halign="center" valign="center" backgroundColor="#9f1313" transparent="1" />
 
 			<widget source="LabelBSSID" render="Label" position="10,60" size="200,25" valign="left" font="Regular;20" transparent="1" foregroundColor="#FFFFFF" />
@@ -49,19 +49,19 @@ class WlanStatus(Screen):
 			<widget source="bitrate" render="Label" position="220,220" size="330,25" valign="center" font="Regular;20" transparent="1" foregroundColor="#FFFFFF" />
 			<widget source="enc" render="Label" position="220,260" size="330,25" valign="center" font="Regular;20" transparent="1" foregroundColor="#FFFFFF" />
 
-			<ePixmap pixmap="skin_default/div-h.png" position="0,350" zPosition="1" size="560,2" />
+			<ePixmap pixmap="div-h.png" position="0,350" zPosition="1" size="560,2" />
 			<widget source="IFtext" render="Label" position="10,355" size="120,21" zPosition="10" font="Regular;20" halign="left" backgroundColor="#25062748" transparent="1" />
 			<widget source="IF" render="Label" position="120,355" size="400,21" zPosition="10" font="Regular;20" halign="left" backgroundColor="#25062748" transparent="1" />
 			<widget source="Statustext" render="Label" position="10,375" size="115,21" zPosition="10" font="Regular;20" halign="left" backgroundColor="#25062748" transparent="1"/>
-			<widget name="statuspic" pixmaps="skin_default/buttons/button_green.png,skin_default/buttons/button_green_off.png" position="130,380" zPosition="10" size="15,16" transparent="1" alphatest="on"/>
+			<widget name="statuspic" pixmaps="buttons/button_green.png,buttons/button_green_off.png" position="130,380" zPosition="10" size="15,16" transparent="1" alphatest="on"/>
 		</screen>"""
 
 	def __init__(self, session, iface):
 		Screen.__init__(self, session)
-		self.session = session
+		self.setTitle(_("Wireless network state"))
 		self.iface = iface
 
-		self["LabelBSSID"] = StaticText(_('Accesspoint:'))
+		self["LabelBSSID"] = StaticText(_('Access point:'))
 		self["LabelESSID"] = StaticText(_('SSID:'))
 		self["LabelQuality"] = StaticText(_('Link quality:'))
 		self["LabelSignal"] = StaticText(_('Signal strength:'))
@@ -94,19 +94,15 @@ class WlanStatus(Screen):
 		self.timer = eTimer()
 		self.timer.timeout.get().append(self.resetList)
 		self.onShown.append(lambda: self.timer.start(8000))
-		self.onLayoutFinish.append(self.layoutFinished)
 		self.onClose.append(self.cleanup)
 
 	def cleanup(self):
 		iStatus.stopWlanConsole()
 
-	def layoutFinished(self):
-		self.setTitle(_("Wireless network state"))
-
 	def resetList(self):
-		iStatus.getDataForInterface(self.iface,self.getInfoCB)
+		iStatus.getDataForInterface(self.iface, self.getInfoCB)
 
-	def getInfoCB(self,data,status):
+	def getInfoCB(self, data, status):
 		if data is not None:
 			if data is True:
 				if status is not None:
@@ -166,7 +162,7 @@ class WlanStatus(Screen):
 		self["IF"].setText(iNetwork.getFriendlyAdapterName(self.iface))
 		self["Statustext"].setText(_("Link:"))
 
-	def updateStatusLink(self,status):
+	def updateStatusLink(self, status):
 		if status is not None:
 			if status[self.iface]["essid"] == "off" or status[self.iface]["accesspoint"] == "Not-Associated" or status[self.iface]["accesspoint"] == False:
 				self["statuspic"].setPixmapNum(1)
@@ -178,9 +174,9 @@ class WlanStatus(Screen):
 class WlanScan(Screen):
 	skin = """
 		<screen name="WlanScan" position="center,center" size="560,400" title="Select a wireless network" >
-			<ePixmap pixmap="skin_default/buttons/red.png" position="0,0" size="140,40" alphatest="on" />
-			<ePixmap pixmap="skin_default/buttons/green.png" position="140,0" size="140,40" alphatest="on" />
-			<ePixmap pixmap="skin_default/buttons/yellow.png" position="280,0" size="140,40" alphatest="on" />
+			<ePixmap pixmap="buttons/red.png" position="0,0" size="140,40" alphatest="on" />
+			<ePixmap pixmap="buttons/green.png" position="140,0" size="140,40" alphatest="on" />
+			<ePixmap pixmap="buttons/yellow.png" position="280,0" size="140,40" alphatest="on" />
 			<widget source="key_red" render="Label" position="0,0" zPosition="1" size="140,40" font="Regular;20" halign="center" valign="center" backgroundColor="#9f1313" transparent="1" />
 			<widget source="key_green" render="Label" position="140,0" zPosition="1" size="140,40" font="Regular;20" halign="center" valign="center" backgroundColor="#1f771f" transparent="1" />
 			<widget source="key_yellow" render="Label" position="280,0" zPosition="1" size="140,40" font="Regular;20" halign="center" valign="center" backgroundColor="#a08500" transparent="1" />
@@ -192,20 +188,20 @@ class WlanScan(Screen):
 							MultiContentEntryText(pos = (175, 30), size = (175, 20), font=1, flags = RT_HALIGN_LEFT, text = 4), # index 0 is the encryption
 							MultiContentEntryText(pos = (350, 0), size = (200, 20), font=1, flags = RT_HALIGN_LEFT, text = 2), # index 0 is the signal
 							MultiContentEntryText(pos = (350, 30), size = (200, 20), font=1, flags = RT_HALIGN_LEFT, text = 3), # index 0 is the maxrate
-							MultiContentEntryPixmapAlphaTest(pos = (0, 52), size = (550, 2), png = 6), # index 6 is the div pixmap
+							MultiContentEntryPixmapAlphaBlend(pos = (0, 52), size = (550, 2), png = 6), # index 6 is the div pixmap
 						],
 					"fonts": [gFont("Regular", 28),gFont("Regular", 18)],
 					"itemHeight": 54
 					}
 				</convert>
 			</widget>
-			<ePixmap pixmap="skin_default/div-h.png" position="0,340" zPosition="1" size="560,2" />
+			<ePixmap pixmap="div-h.png" position="0,340" zPosition="1" size="560,2" />
 			<widget source="info" render="Label" position="0,350" size="560,50" font="Regular;24" halign="center" valign="center" backgroundColor="#25062748" transparent="1" />
 		</screen>"""
 
 	def __init__(self, session, iface):
 		Screen.__init__(self, session)
-		self.session = session
+		self.setTitle(_("Select a wireless network"))
 		self.iface = iface
 		self.skin_path = plugin_path
 		self.oldInterfaceState = iNetwork.getAdapterAttribute(self.iface, "up")
@@ -215,7 +211,7 @@ class WlanScan(Screen):
 		self.cleanList = None
 		self.oldlist = {}
 		self.listLength = None
-		self.divpng = LoadPixmap(path=resolveFilename(SCOPE_SKIN_IMAGE, "skin_default/div-h.png"))
+		self.divpng = LoadPixmap(path=resolveFilename(SCOPE_SKIN_IMAGE, "div-h.png"))
 
 		self.rescanTimer = eTimer()
 		self.rescanTimer.callback.append(self.rescanTimerFired)
@@ -242,11 +238,7 @@ class WlanScan(Screen):
 		})
 		iWlan.setInterface(self.iface)
 		self.w = iWlan.getInterface()
-		self.onLayoutFinish.append(self.layoutFinished)
-		self.getAccessPoints(refresh = False)
-
-	def layoutFinished(self):
-		self.setTitle(_("Select a wireless network"))
+		self.getAccessPoints(refresh=False)
 
 	def select(self):
 		cur = self["list"].getCurrent()
@@ -280,7 +272,7 @@ class WlanScan(Screen):
 
 	def updateAPList(self):
 		newList = []
-		newList = self.getAccessPoints(refresh = True)
+		newList = self.getAccessPoints(refresh=True)
 		self.newAPList = []
 		tmpList = []
 		newListIndex = None
@@ -294,7 +286,7 @@ class WlanScan(Screen):
 
 		if len(tmpList):
 			for entry in tmpList:
-				self.newAPList.append(self.buildEntryComponent( entry[0], entry[1], entry[2], entry[3], entry[4], entry[5] ))
+				self.newAPList.append(self.buildEntryComponent(entry[0], entry[1], entry[2], entry[3], entry[4], entry[5]))
 
 			currentListEntry = self["list"].getCurrent()
 			if currentListEntry is not None:
@@ -302,7 +294,7 @@ class WlanScan(Screen):
 				for entry in self.newAPList:
 					if entry[0] == currentListEntry[0]:
 						newListIndex = idx
-					idx +=1
+					idx += 1
 			self['list'].setList(self.newAPList)
 			if newListIndex is not None:
 				self["list"].setIndex(newListIndex)
@@ -311,7 +303,7 @@ class WlanScan(Screen):
 			self.buildWlanList()
 			self.setInfo()
 
-	def getAccessPoints(self, refresh = False):
+	def getAccessPoints(self, refresh=False):
 		self.APList = []
 		self.cleanList = []
 		aps = iWlan.getNetworkList()
@@ -322,8 +314,8 @@ class WlanScan(Screen):
 			for ap in aps:
 				a = aps[ap]
 				if a['active']:
-					tmpList.append( (a['essid'], a['bssid']) )
-					compList.append( (a['essid'], a['bssid'], a['encrypted'], a['iface'], a['maxrate'], a['signal']) )
+					tmpList.append((a['essid'], a['bssid']))
+					compList.append((a['essid'], a['bssid'], a['encrypted'], a['iface'], a['maxrate'], a['signal']))
 
 			for entry in tmpList:
 				if entry[0] == "":
@@ -331,14 +323,14 @@ class WlanScan(Screen):
 						if compentry[1] == entry[1]:
 							compList.remove(compentry)
 			for entry in compList:
-				self.cleanList.append( ( entry[0], entry[1], entry[2], entry[3], entry[4], entry[5] ) )
+				self.cleanList.append((entry[0], entry[1], entry[2], entry[3], entry[4], entry[5]))
 				if entry[0] not in self.oldlist:
-					self.oldlist[entry[0]] = { 'data': entry }
+					self.oldlist[entry[0]] = {'data': entry}
 				else:
 					self.oldlist[entry[0]]['data'] = entry
 
 		for entry in self.cleanList:
-			self.APList.append(self.buildEntryComponent( entry[0], entry[1], entry[2], entry[3], entry[4], entry[5] ))
+			self.APList.append(self.buildEntryComponent(entry[0], entry[1], entry[2], entry[3], entry[4], entry[5]))
 
 		if refresh is False:
 			self['list'].setList(self.APList)
@@ -357,7 +349,7 @@ class WlanScan(Screen):
 	def buildWlanList(self):
 		self.WlanList = []
 		for entry in self['list'].list:
-			self.WlanList.append( (entry[0], entry[0]) )
+			self.WlanList.append((entry[0], entry[0]))
 
 	def getLength(self):
 		return self.listLength
@@ -371,12 +363,14 @@ class WlanScan(Screen):
 def WlanStatusScreenMain(session, iface):
 	session.open(WlanStatus, iface)
 
+
 def callFunction(iface):
 	iWlan.setInterface(iface)
 	i = iWlan.getWirelessInterfaces()
 	if iface in i or iNetwork.isWirelessInterface(iface):
 		return WlanStatusScreenMain
 	return None
+
 
 def configStrings(iface):
 	driver = iNetwork.detectWlanModule(iface)
@@ -385,7 +379,7 @@ def configStrings(iface):
 		encryption = config.plugins.wlan.encryption.value
 		psk = config.plugins.wlan.psk.value
 		essid = config.plugins.wlan.essid.value
-		ret += '\tpre-up wl-config.sh -m ' + encryption.lower() + ' -k ' + psk + ' -s "' + essid + '" \n'
+		ret += '\tpre-up wl-config.sh -m ' + encryption.lower() + ' -k "' + psk + '" -s "' + essid + '" \n'
 		ret += '\tpost-down wl-down.sh\n'
 	else:
 		if driver == 'madwifi' and config.plugins.wlan.hiddenessid.value:
@@ -394,5 +388,6 @@ def configStrings(iface):
 		ret += "\tpre-down wpa_cli -i" + iface + " terminate || true\n"
 	return ret
 
+
 def Plugins(**kwargs):
-	return PluginDescriptor(name=_("Wireless LAN"), description=_("Connect to a wireless network"), where = PluginDescriptor.WHERE_NETWORKSETUP, needsRestart = False, fnc={"ifaceSupported": callFunction, "configStrings": configStrings, "WlanPluginEntry": lambda x: _("Wireless network configuration...")})
+	return PluginDescriptor(name=_("Wireless LAN"), description=_("Connect to a wireless network"), where=PluginDescriptor.WHERE_NETWORKSETUP, needsRestart=False, fnc={"ifaceSupported": callFunction, "configStrings": configStrings, "WlanPluginEntry": lambda x: _("Wireless network configuration...")})

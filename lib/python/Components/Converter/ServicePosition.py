@@ -2,13 +2,16 @@ from Converter import Converter
 from Poll import Poll
 from enigma import iPlayableService
 from Components.Element import cached, ElementError
+from time import localtime, strftime, time
 
-class ServicePosition(Poll, Converter, object):
+
+class ServicePosition(Poll, Converter):
 	TYPE_LENGTH = 0
 	TYPE_POSITION = 1
 	TYPE_REMAINING = 2
 	TYPE_GAUGE = 3
 	TYPE_SUMMARY = 4
+	TYPE_START_END_TIME = 5
 
 	def __init__(self, type):
 		Poll.__init__(self)
@@ -22,6 +25,7 @@ class ServicePosition(Poll, Converter, object):
 		self.detailed = 'Detailed' in args
 		self.showHours = 'ShowHours' in args
 		self.showNoSeconds = 'ShowNoSeconds' in args
+		self.vfd = '7segment' in args
 
 		if type == "Length":
 			self.type = self.TYPE_LENGTH
@@ -33,20 +37,26 @@ class ServicePosition(Poll, Converter, object):
 			self.type = self.TYPE_GAUGE
 		elif type == "Summary":
 			self.type = self.TYPE_SUMMARY
+		elif type == "Startendtime":
+			self.type = self.TYPE_START_END_TIME
 		else:
-			raise ElementError("type must be {Length|Position|Remaining|Gauge} with optional arguments {Negate|Detailed|ShowHours|ShowNoSeconds} for ServicePosition converter")
+			raise ElementError("type must be {Length|Position|Remaining|Gauge|Summary|Startendtime} with optional arguments {Negate|Plus|Detailed|ShowHours|ShowNoSeconds|7segment} for ServicePosition converter")
 
 		if self.detailed:
 			self.poll_interval = 100
-		elif self.type == self.TYPE_LENGTH:
+		elif self.type == self.TYPE_LENGTH or self.type == self.TYPE_START_END_TIME:
 			self.poll_interval = 2000
 		else:
 			self.poll_interval = 500
 
+		self.start_time = self.service = None
 		self.poll_enabled = True
 
 	def getSeek(self):
 		s = self.source.service
+		if self.type == self.TYPE_START_END_TIME and s and (self.service is None or s != self.service):
+			self.service = s
+			self.start_time = None
 		return s and s.seek()
 
 	@cached
@@ -87,18 +97,24 @@ class ServicePosition(Poll, Converter, object):
 				l = self.position
 			elif self.type == self.TYPE_REMAINING:
 				l = self.length - self.position
-			elif self.type == self.TYPE_SUMMARY:
+			elif self.type == self.TYPE_SUMMARY or self.type == self.TYPE_START_END_TIME:
 				s = self.position / 90000
 				e = (self.length / 90000) - s
-				return "%02d:%02d +%2dm" % (s/60, s%60, e/60)
+				if self.type == self.TYPE_SUMMARY:
+					return "%02d:%02d +%2dm" % (s / 60, s % 60, e / 60)
+				start_time = strftime("%H:%M", localtime(time() - s))
+				end_time = strftime("%H:%M", localtime(time() + e))
+				if self.start_time is None:
+					self.start_time = start_time
+				elif self.start_time != start_time:
+					start_time = self.start_time
+				return start_time + " - " + end_time
 
 			if l < 0:
 				return ""
 
-			if not self.detailed:
-				l /= 90000
-
-			if self.negate: l = -l
+			if self.negate:
+				l = -l
 
 			sign = ""
 			if l >= 0:
@@ -109,21 +125,31 @@ class ServicePosition(Poll, Converter, object):
 				sign = "-"
 
 			if not self.detailed:
-				if self.showHours:
-					if self.showNoSeconds:
-						return sign + "%d:%02d" % (l/3600, l%3600/60)
+				l /= 90000
+				if not self.vfd:
+					if self.showHours:
+						if self.showNoSeconds:
+							return sign + "%d:%02d" % (l / 3600, l % 3600 / 60)
+						else:
+							return sign + "%d:%02d:%02d" % (l / 3600, l % 3600 / 60, l % 60)
 					else:
-						return sign + "%d:%02d:%02d" % (l/3600, l%3600/60, l%60)
+						if self.showNoSeconds:
+							return sign + "%d" % (l / 60)
+						else:
+							return sign + "%d:%02d" % (l / 60, l % 60)
 				else:
-					if self.showNoSeconds:
-						return sign + "%d" % (l/60)
+					f = l / 60
+					if f < 60:
+						s = l % 60
 					else:
-						return sign + "%d:%02d" % (l/60, l%60)
+						f /= 60
+						s = l % 3600 / 60
+					return "%2d:%02d" % (f, s)
 			else:
 				if self.showHours:
-					return sign + "%d:%02d:%02d:%03d" % ((l/3600/90000), (l/90000)%3600/60, (l/90000)%60, (l%90000)/90)
+					return sign + "%d:%02d:%02d:%03d" % ((l / 3600 / 90000), (l / 90000) % 3600 / 60, (l / 90000) % 60, (l % 90000) / 90)
 				else:
-					return sign + "%d:%02d:%03d" % ((l/60/90000), (l/90000)%60, (l%90000)/90)
+					return sign + "%d:%02d:%03d" % ((l / 60 / 90000), (l / 90000) % 60, (l % 90000) / 90)
 
 	# range/value are for the Progress renderer
 	range = 10000

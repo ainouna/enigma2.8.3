@@ -6,20 +6,20 @@ from Screens.ChoiceBox import ChoiceBox
 from Components.ServiceEventTracker import ServiceEventTracker
 from Components.ActionMap import NumberActionMap
 from Components.ConfigList import ConfigListScreen
-from Components.ChoiceList import ChoiceList
-from Components.config import config, ConfigSubsection, getConfigListEntry, ConfigNothing, ConfigSelection, ConfigOnOff
+from Components.config import config, ConfigSubsection, getConfigListEntry, ConfigNothing, ConfigSelection, ConfigOnOff, ConfigYesNo
 from Components.Label import Label
 from Components.Sources.List import List
 from Components.Sources.Boolean import Boolean
 from Components.SystemInfo import SystemInfo
 from Components.VolumeControl import VolumeControl
 
-from enigma import iPlayableService, eTimer, eSize
+from enigma import iPlayableService, eTimer, eSize, eDVBDB, eServiceReference, eServiceCenter, iServiceInformation
 
 FOCUS_CONFIG, FOCUS_STREAMS = range(2)
 [PAGE_AUDIO, PAGE_SUBTITLES] = ["audio", "subtitles"]
 
-class AudioSelection(Screen, ConfigListScreen):
+
+class AudioSelection(ConfigListScreen, Screen):
 	def __init__(self, session, infobar=None, page=PAGE_AUDIO):
 		Screen.__init__(self, session)
 
@@ -32,9 +32,10 @@ class AudioSelection(Screen, ConfigListScreen):
 		self.Plugins = []
 		ConfigListScreen.__init__(self, [])
 		self.infobar = infobar or self.session.infobar
+		if not hasattr(self.infobar, "selected_subtitle"):
+			self.infobar.selected_subtitle = None
 
-		self.__event_tracker = ServiceEventTracker(screen=self, eventmap=
-			{
+		self.__event_tracker = ServiceEventTracker(screen=self, eventmap={
 				iPlayableService.evUpdatedInfo: self.__updatedInfo
 			})
 		self.cached_subtitle_checked = False
@@ -66,8 +67,8 @@ class AudioSelection(Screen, ConfigListScreen):
 		}, -2)
 
 		self.settings = ConfigSubsection()
-		choicelist = [(PAGE_AUDIO,""), (PAGE_SUBTITLES,"")]
-		self.settings.menupage = ConfigSelection(choices = choicelist, default=page)
+		choicelist = [(PAGE_AUDIO, ""), (PAGE_SUBTITLES, "")]
+		self.settings.menupage = ConfigSelection(choices=choicelist, default=page)
 		self.onLayoutFinish.append(self.__layoutFinished)
 
 	def __layoutFinished(self):
@@ -77,6 +78,7 @@ class AudioSelection(Screen, ConfigListScreen):
 
 	def fillList(self, arg=None):
 		from Tools.ISO639 import LanguageCodes
+		from  Components.UsageConfig import originalAudioTracks, visuallyImpairedCommentary
 		streams = []
 		conflist = []
 		selectedidx = 0
@@ -91,17 +93,24 @@ class AudioSelection(Screen, ConfigListScreen):
 			self.audioTracks = audio = service and service.audioTracks()
 			n = audio and audio.getNumberOfTracks() or 0
 			if SystemInfo["CanDownmixAC3"]:
-				self.settings.downmix = ConfigOnOff(default=config.av.downmix_ac3.value)
-				self.settings.downmix.addNotifier(self.changeAC3Downmix, initial_call = False)
-				conflist.append(getConfigListEntry(_("Multi channel downmix"), self.settings.downmix))
-				self["key_red"].setBoolean(True)
+				downmix_ac3_value = config.av.downmix_ac3.value
+				if downmix_ac3_value in ("downmix", "passthrough"):
+					self.settings.downmix = ConfigSelection(choices=[("downmix", _("Downmix")), ("passthrough", _("Passthrough"))], default=downmix_ac3_value)
+					self.settings.downmix.addNotifier(self.changeAC3Downmix, initial_call=False)
+					extra_text = " - AC3"
+					if SystemInfo["CanDownmixDTS"]:
+						extra_text += ",DTS"
+					if SystemInfo["CanDownmixAAC"]:
+						extra_text += ",AAC"
+					conflist.append(getConfigListEntry(_("Multi channel downmix") + extra_text, self.settings.downmix))
+					self["key_red"].setBoolean(True)
 
 			if n > 0:
 				self.audioChannel = service.audioChannel()
 				if self.audioChannel:
-					choicelist = [("0",_("left")), ("1",_("stereo")), ("2", _("right"))]
-					self.settings.channelmode = ConfigSelection(choices = choicelist, default = str(self.audioChannel.getCurrentChannel()))
-					self.settings.channelmode.addNotifier(self.changeMode, initial_call = False)
+					choicelist = [("0", _("left")), ("1", _("stereo")), ("2", _("right"))]
+					self.settings.channelmode = ConfigSelection(choices=choicelist, default=str(self.audioChannel.getCurrentChannel()))
+					self.settings.channelmode.addNotifier(self.changeMode, initial_call=False)
 					conflist.append(getConfigListEntry(_("Channel"), self.settings.channelmode))
 					self["key_green"].setBoolean(True)
 				else:
@@ -126,8 +135,10 @@ class AudioSelection(Screen, ConfigListScreen):
 							language += ' / '
 						if lang in LanguageCodes:
 							language += _(LanguageCodes[lang][0])
-						elif lang == "und":
-							""
+						elif lang in originalAudioTracks:
+							language += "%s  (%s)" % (_("Original audio"), lang)
+						elif lang in visuallyImpairedCommentary:
+							language += "%s  (%s)" % (_("Visually impaired commentary"), lang)
 						else:
 							language += lang
 						cnt += 1
@@ -154,10 +165,11 @@ class AudioSelection(Screen, ConfigListScreen):
 					def __init__(self, fnc, *args):
 						self.fnc = fnc
 						self.args = args
+
 					def __call__(self, *args, **kwargs):
 						self.fnc(*self.args)
 
-				self.Plugins = [ (p.name, PluginCaller(self.infobar.runPlugin, p)) for p in plugins.getPlugins(where = PluginDescriptor.WHERE_AUDIOMENU) ]
+				self.Plugins = [(p.name, PluginCaller(self.infobar.runPlugin, p)) for p in plugins.getPlugins(where=PluginDescriptor.WHERE_AUDIOMENU)]
 
 				if self.Plugins:
 					self["key_blue"].setBoolean(True)
@@ -184,7 +196,7 @@ class AudioSelection(Screen, ConfigListScreen):
 				language = ""
 				selected = ""
 
-				if self.selectedSubtitle and x[:4] == self.selectedSubtitle[:4]:
+				if config.subtitles.show.value and self.selectedSubtitle and x[:4] == self.selectedSubtitle[:4]:
 					selected = "X"
 					selectedidx = idx
 
@@ -203,7 +215,7 @@ class AudioSelection(Screen, ConfigListScreen):
 
 				elif x[0] == 1:
 					description = "teletext"
-					number = "%x%02x" %(x[3] and x[3] or 8, x[2])
+					number = "%x%02x" % (x[3] and x[3] or 8, x[2])
 
 				elif x[0] == 2:
 					types = (_("unknown"), _("embedded"), _("SSA file"), _("ASS file"),
@@ -219,12 +231,11 @@ class AudioSelection(Screen, ConfigListScreen):
 
 			conflist.append(getConfigListEntry(_("To audio selection"), self.settings.menupage))
 
-			if self.infobar.selected_subtitle and self.infobar.selected_subtitle != (0,0,0,0)  and not ".DVDPlayer'>" in `self.infobar`:
+			if self.infobar.selected_subtitle and self.infobar.selected_subtitle != (0, 0, 0, 0) and not ".DVDPlayer'>" in `self.infobar`:
 				self["key_blue"].setBoolean(True)
 				conflist.append(getConfigListEntry(_("Subtitle Quickmenu"), ConfigNothing()))
 
 		self["config"].list = conflist
-		self["config"].l.setList(conflist)
 
 		self["streams"].list = streams
 		self["streams"].setIndex(selectedidx)
@@ -236,33 +247,21 @@ class AudioSelection(Screen, ConfigListScreen):
 		service = self.session.nav.getCurrentService()
 		subtitle = service and service.subtitle()
 		subtitlelist = subtitle and subtitle.getSubtitleList()
-		self.selectedSubtitle = None
-		if self.subtitlesEnabled():
-			self.selectedSubtitle = self.infobar.selected_subtitle
-			if self.selectedSubtitle and self.selectedSubtitle[:4] == (0,0,0,0):
-				self.selectedSubtitle = None
-			elif self.selectedSubtitle and not self.selectedSubtitle[:4] in (x[:4] for x in subtitlelist):
-				subtitlelist.append(self.selectedSubtitle)
+		self.selectedSubtitle = self.infobar.selected_subtitle
+		if self.selectedSubtitle and self.selectedSubtitle[:4] == (0, 0, 0, 0):
+			self.selectedSubtitle = None
+		elif self.selectedSubtitle and not self.selectedSubtitle[:4] in (x[:4] for x in subtitlelist):
+			subtitlelist.append(self.selectedSubtitle)
 		return subtitlelist
 
-	def subtitlesEnabled(self):
-		try:
-			return self.infobar.subtitle_window.shown
-		except:
-			return False
-
-	def enableSubtitle(self, subtitle):
-		if self.infobar.selected_subtitle != subtitle:
-			self.infobar.enableSubtitle(subtitle)
-
-	def changeAC3Downmix(self, downmix):
-		config.av.downmix_ac3.value = downmix.getValue() == True
+	def changeAC3Downmix(self, configElement):
+		config.av.downmix_ac3.value = configElement.value
 		config.av.downmix_ac3.save()
 		if SystemInfo["CanDownmixDTS"]:
-			config.av.downmix_dts.value = config.av.downmix_ac3.value
+			config.av.downmix_dts.value = configElement.value
 			config.av.downmix_dts.save()
 		if SystemInfo["CanDownmixAAC"]:
-			config.av.downmix_aac.value = config.av.downmix_ac3.value
+			config.av.downmix_aac.value = configElement.value
 			config.av.downmix_aac.save()
 
 	def changeMode(self, mode):
@@ -281,7 +280,7 @@ class AudioSelection(Screen, ConfigListScreen):
 		elif self.focus == FOCUS_STREAMS:
 			self["streams"].setIndex(0)
 
-	def keyRight(self, config = False):
+	def keyRight(self, config=False):
 		if config or self.focus == FOCUS_CONFIG:
 			if self["config"].getCurrentIndex() < 3:
 				ConfigListScreen.keyRight(self)
@@ -294,10 +293,10 @@ class AudioSelection(Screen, ConfigListScreen):
 						self.session.openWithCallback(runPluginAction, ChoiceBox, title=_("Audio plugins"), list=self.plugincallfunc)
 					else:
 						self.plugincallfunc()
-				elif self.settings.menupage.getValue() == PAGE_SUBTITLES and self.infobar.selected_subtitle and self.infobar.selected_subtitle != (0,0,0,0):
+				elif self.settings.menupage.getValue() == PAGE_SUBTITLES and self.infobar.selected_subtitle and self.infobar.selected_subtitle != (0, 0, 0, 0):
 					self.session.open(QuickSubtitlesConfigMenu, self.infobar)
 		if self.focus == FOCUS_STREAMS and self["streams"].count() and config == False:
-			self["streams"].setIndex(self["streams"].count()-1)
+			self["streams"].setIndex(self["streams"].count() - 1)
 
 	def keyRed(self):
 		if self["key_red"].getBoolean():
@@ -334,14 +333,14 @@ class AudioSelection(Screen, ConfigListScreen):
 			if self["streams"].getIndex() == 0:
 				self["config"].instance.setSelectionEnable(True)
 				self["streams"].style = "notselected"
-				self["config"].setCurrentIndex(len(self["config"].getList())-1)
+				self["config"].setCurrentIndex(len(self["config"].getList()) - 1)
 				self.focus = FOCUS_CONFIG
 			else:
 				self["streams"].selectPrevious()
 
 	def keyDown(self):
 		if self.focus == FOCUS_CONFIG:
-			if self["config"].getCurrentIndex() < len(self["config"].getList())-1:
+			if self["config"].getCurrentIndex() < len(self["config"].getList()) - 1:
 				self["config"].instance.moveSelection(self["config"].instance.moveDown)
 			else:
 				self["config"].instance.setSelectionEnable(False)
@@ -361,7 +360,7 @@ class AudioSelection(Screen, ConfigListScreen):
 
 	def keyNumberGlobal(self, number):
 		if number <= len(self["streams"].list):
-			self["streams"].setIndex(number-1)
+			self["streams"].setIndex(number - 1)
 			self.keyOk()
 
 	def keyOk(self):
@@ -371,13 +370,14 @@ class AudioSelection(Screen, ConfigListScreen):
 				self.changeAudio(cur[0])
 				self.__updatedInfo()
 			if self.settings.menupage.getValue() == PAGE_SUBTITLES and cur[0] is not None:
-				if self.infobar.selected_subtitle and self.infobar.selected_subtitle[:4] == cur[0][:4]:
-					self.enableSubtitle(None)
+				if config.subtitles.show.value and self.infobar.selected_subtitle and self.infobar.selected_subtitle[:4] == cur[0][:4]:
+					self.infobar.enableSubtitle(None)
 					selectedidx = self["streams"].getIndex()
 					self.__updatedInfo()
 					self["streams"].setIndex(selectedidx)
 				else:
-					self.enableSubtitle(cur[0][:5])
+					config.subtitles.show.value = True
+					self.infobar.enableSubtitle(cur[0][:5])
 					self.__updatedInfo()
 			self.close(0)
 		elif self.focus == FOCUS_CONFIG:
@@ -385,7 +385,7 @@ class AudioSelection(Screen, ConfigListScreen):
 
 	def openAutoLanguageSetup(self):
 		if self.protectContextMenu and config.ParentalControl.setuppinactive.value and config.ParentalControl.config_sections.context_menus.value:
-			self.session.openWithCallback(self.protectResult, PinInput, pinList=[x.value for x in config.ParentalControl.servicepin], triesEntry=config.ParentalControl.retries.servicepin, title=_("Please enter the correct pin code"), windowTitle=_("Enter pin code"))
+			self.session.openWithCallback(self.protectResult, PinInput, pinList=[x.value for x in config.ParentalControl.servicepin], triesEntry=config.ParentalControl.retries.servicepin, title=_("Please enter the correct PIN code"), windowTitle=_("Enter PIN code"))
 		else:
 			self.protectResult(True)
 
@@ -394,40 +394,51 @@ class AudioSelection(Screen, ConfigListScreen):
 			self.session.open(Setup, "autolanguagesetup")
 			self.protectContextMenu = False
 		elif answer is not None:
-			self.session.openWithCallback(self.close, MessageBox, _("The pin code you entered is wrong."), MessageBox.TYPE_ERROR)
+			self.session.openWithCallback(self.close, MessageBox, _("The PIN code you entered is wrong."), MessageBox.TYPE_ERROR)
 
 	def cancel(self):
 		self.close(0)
+
 
 class SubtitleSelection(AudioSelection):
 	def __init__(self, session, infobar=None):
 		AudioSelection.__init__(self, session, infobar, page=PAGE_SUBTITLES)
 		self.skinName = ["AudioSelection"]
 
+
 class QuickSubtitlesConfigMenu(ConfigListScreen, Screen):
 	skin = """
 	<screen position="50,50" size="480,305" title="Subtitle settings" backgroundColor="#7f000000" flags="wfNoBorder">
-		<widget name="config" position="5,5" size="470,275" font="Regular;18" zPosition="1" transparent="1" selectionPixmap="PLi-HD/buttons/sel.png" valign="center" />
+		<widget name="config" position="5,5" size="470,275" font="Regular;18" zPosition="1" transparent="1" selectionPixmap="buttons/sel.png" valign="center" />
 		<widget name="videofps" position="5,280" size="470,20" backgroundColor="secondBG" transparent="1" zPosition="1" font="Regular;16" valign="center" halign="left" foregroundColor="blue"/>
 	</screen>"""
+
+	FLAG_CENTER_DVB_SUBS = 2048
 
 	def __init__(self, session, infobar):
 		Screen.__init__(self, session)
 		self.skin = QuickSubtitlesConfigMenu.skin
 		self.infobar = infobar or self.session.infobar
-
 		self.wait = eTimer()
 		self.wait.timeout.get().append(self.resyncSubtitles)
-
+		self.service = self.session.nav.getCurrentlyPlayingServiceReference()
+		servicepath = self.service and self.service.getPath()
+		if servicepath and servicepath.startswith("/") and self.service.toString().startswith("1:"):
+			info = eServiceCenter.getInstance().info(self.service)
+			self.service_string = info and info.getInfoString(self.service, iServiceInformation.sServiceref)
+		else:
+			self.service_string = self.service.toString()
+		self.center_dvb_subs = ConfigYesNo(default=(eDVBDB.getInstance().getFlag(eServiceReference(self.service_string)) & self.FLAG_CENTER_DVB_SUBS) and True)
+		self.center_dvb_subs.addNotifier(self.setCenterDvbSubs)
 		self["videofps"] = Label("")
 
 		sub = self.infobar.selected_subtitle
 		if sub[0] == 0:  # dvb
 			menu = [
 				getConfigMenuItem("config.subtitles.dvb_subtitles_yellow"),
-				getConfigMenuItem("config.subtitles.dvb_subtitles_centered"),
 				getConfigMenuItem("config.subtitles.dvb_subtitles_backtrans"),
 				getConfigMenuItem("config.subtitles.dvb_subtitles_original_position"),
+				(_("Center DVB subtitles"), self.center_dvb_subs),
 				getConfigMenuItem("config.subtitles.subtitle_position"),
 				getConfigMenuItem("config.subtitles.subtitle_bad_timing_delay"),
 				getConfigMenuItem("config.subtitles.subtitle_noPTSrecordingdelay"),
@@ -461,22 +472,30 @@ class QuickSubtitlesConfigMenu(ConfigListScreen, Screen):
 			]
 			self["videofps"].setText(_("Video: %s fps") % (self.getFps().rstrip(".000")))
 
-		ConfigListScreen.__init__(self, menu, self.session, on_change = self.changedEntry)
+		ConfigListScreen.__init__(self, menu, self.session, on_change=self.changedEntry)
 
 		self["actions"] = NumberActionMap(["SetupActions"],
 		{
 			"cancel": self.cancel,
 			"ok": self.ok,
-		},-2)
+		}, -2)
 
 		self.onLayoutFinish.append(self.layoutFinished)
 
+	def setCenterDvbSubs(self, configElement):
+		if configElement.value:
+			eDVBDB.getInstance().addFlag(eServiceReference(self.service_string), self.FLAG_CENTER_DVB_SUBS)
+			config.subtitles.dvb_subtitles_centered.value = True
+		else:
+			eDVBDB.getInstance().removeFlag(eServiceReference(self.service_string), self.FLAG_CENTER_DVB_SUBS)
+			config.subtitles.dvb_subtitles_centered.value = False
+
 	def layoutFinished(self):
 		if not self["videofps"].text:
-			self.instance.resize(eSize(self.instance.size().width(), self["config"].l.getItemSize().height()*len(self["config"].getList()) + 10))
+			self.instance.resize(eSize(self.instance.size().width(), self["config"].l.getItemSize().height() * len(self["config"].getList()) + 10))
 
 	def changedEntry(self):
-		if self["config"].getCurrent() in [getConfigMenuItem("config.subtitles.pango_subtitles_delay"),getConfigMenuItem("config.subtitles.pango_subtitles_fps")]:
+		if self["config"].getCurrent() in [getConfigMenuItem("config.subtitles.pango_subtitles_delay"), getConfigMenuItem("config.subtitles.pango_subtitles_fps")]:
 			self.wait.start(500, True)
 
 	def resyncSubtitles(self):
@@ -484,17 +503,17 @@ class QuickSubtitlesConfigMenu(ConfigListScreen, Screen):
 		self.infobar.setSeekState(self.infobar.SEEK_STATE_PLAY)
 
 	def getFps(self):
-		from enigma import iServiceInformation
 		service = self.session.nav.getCurrentService()
 		info = service and service.info()
 		if not info:
 			return ""
 		fps = info.getInfo(iServiceInformation.sFrameRate)
 		if fps > 0:
-			return "%6.3f" % (fps/1000.)
+			return "%6.3f" % (fps / 1000.)
 		return ""
 
 	def cancel(self):
+		self.center_dvb_subs.removeNotifier(self.setCenterDvbSubs)
 		self.close()
 
 	def ok(self):

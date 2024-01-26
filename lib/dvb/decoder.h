@@ -13,7 +13,7 @@ private:
 	ePtr<eDVBDemux> m_demux;
 	int m_fd, m_fd_demux, m_dev, m_is_freezed;
 public:
-	enum { aMPEG, aAC3, aDTS, aAAC, aAACHE, aLPCM, aDTSHD, aDDP };
+	enum { aMPEG, aAC3, aDTS, aAAC, aAACHE, aLPCM, aDTSHD, aDDP, aDRA, aAC4 };
 	eDVBAudio(eDVBDemux *demux, int dev);
 	enum { aMonoLeft, aStereo, aMonoRight };
 	void setChannel(int channel);
@@ -26,22 +26,23 @@ public:
 	virtual ~eDVBAudio();
 };
 
-class eDVBVideo: public iObject, public Object
+class eDVBVideo: public iObject, public sigc::trackable
 {
 	DECLARE_REF(eDVBVideo);
 private:
 	ePtr<eDVBDemux> m_demux;
 	int m_fd, m_fd_demux, m_dev;
+	bool m_fcc_enable;
 	static int m_close_invalidates_attributes;
 	int m_is_slow_motion, m_is_fast_forward, m_is_freezed;
 	ePtr<eSocketNotifier> m_sn;
 	void video_event(int what);
-	Signal1<void, struct iTSMPEGDecoder::videoEvent> m_event;
-	int m_width, m_height, m_framerate, m_aspect, m_progressive;
+	sigc::signal1<void, struct iTSMPEGDecoder::videoEvent> m_event;
+	int m_width, m_height, m_framerate, m_aspect, m_progressive, m_gamma;
 	static int readApiSize(int fd, int &xres, int &yres, int &aspect);
 public:
-	enum { MPEG2, MPEG4_H264, MPEG1, MPEG4_Part2, VC1, VC1_SM, H265_HEVC, AVS };
-	eDVBVideo(eDVBDemux *demux, int dev);
+	enum { UNKNOWN = -1, MPEG2, MPEG4_H264, VC1 = 3, MPEG4_Part2, VC1_SM, MPEG1, H265_HEVC, AVS = 16, AVS2 = 40 };
+	eDVBVideo(eDVBDemux *demux, int dev, bool fcc_enable=false);
 	void stop();
 	int startPid(int pid, int type=MPEG2);
 	void flush();
@@ -51,12 +52,13 @@ public:
 	void unfreeze();
 	int getPTS(pts_t &now);
 	virtual ~eDVBVideo();
-	RESULT connectEvent(const Slot1<void, struct iTSMPEGDecoder::videoEvent> &event, ePtr<eConnection> &conn);
+	RESULT connectEvent(const sigc::slot1<void, struct iTSMPEGDecoder::videoEvent> &event, ePtr<eConnection> &conn);
 	int getWidth();
 	int getHeight();
 	int getProgressive();
 	int getFrameRate();
 	int getAspect();
+	int getGamma();
 };
 
 class eDVBPCR: public iObject
@@ -85,7 +87,7 @@ public:
 	virtual ~eDVBTText();
 };
 
-class eTSMPEGDecoder: public Object, public iTSMPEGDecoder
+class eTSMPEGDecoder: public sigc::trackable, public iTSMPEGDecoder
 {
 	DECLARE_REF(eTSMPEGDecoder);
 private:
@@ -117,9 +119,16 @@ private:
 
 	void demux_event(int event);
 	void video_event(struct videoEvent);
-	Signal1<void, struct videoEvent> m_video_event;
+	sigc::signal1<void, struct videoEvent> m_video_event;
 	int m_video_clip_fd;
 	ePtr<eTimer> m_showSinglePicTimer;
+	int m_fcc_fd;
+	bool m_fcc_enable;
+	int m_fcc_state;
+	int m_fcc_feid;
+	int m_fcc_vpid;
+	int m_fcc_vtype;
+	int m_fcc_pcrpid;
 	void finishShowSinglePic(); // called by timer
 public:
 	enum { pidNone = -1 };
@@ -167,14 +176,32 @@ public:
 	RESULT setRadioPic(const std::string &filename);
 		/* what 0=auto, 1=video, 2=audio. */
 	RESULT getPTS(int what, pts_t &pts);
-	RESULT connectVideoEvent(const Slot1<void, struct videoEvent> &event, ePtr<eConnection> &connection);
+	RESULT connectVideoEvent(const sigc::slot1<void, struct videoEvent> &event, ePtr<eConnection> &connection);
 	int getVideoWidth();
 	int getVideoHeight();
 	int getVideoProgressive();
 	int getVideoFrameRate();
 	int getVideoAspect();
+	int getVideoGamma();
 	static RESULT setHwPCMDelay(int delay);
 	static RESULT setHwAC3Delay(int delay);
+
+	enum 
+	{
+		fcc_state_stop,
+		fcc_state_ready,
+		fcc_state_decoding
+	};
+
+	RESULT prepareFCC(int fe_id, int vpid, int vtype, int pcrpid);
+	RESULT fccStart();
+	RESULT fccStop();
+	RESULT fccDecoderStart();
+	RESULT fccDecoderStop();
+	RESULT fccUpdatePids(int fe_id, int vpid, int vtype, int pcrpid);
+	RESULT fccSetPids(int fe_id, int vpid, int vtype, int pcrpid);
+	RESULT fccGetFD();
+	RESULT fccFreeFD();
 };
 
 #endif

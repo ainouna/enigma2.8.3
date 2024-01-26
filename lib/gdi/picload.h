@@ -39,8 +39,8 @@ struct Cfilepara
 
 	~Cfilepara()
 	{
-		if (pic_buffer != NULL)	delete pic_buffer;
-		if (palette != NULL) delete palette;
+		if (pic_buffer != NULL)	delete [] pic_buffer;
+		if (palette != NULL) delete [] palette;
 		free(file);
 	}
 
@@ -48,7 +48,7 @@ struct Cfilepara
 };
 #endif
 
-class ePicLoad: public eMainloop, public eThread, public Object, public iObject
+class ePicLoad: public eMainloop, public eThread, public sigc::trackable, public iObject
 {
 	DECLARE_REF(ePicLoad);
 

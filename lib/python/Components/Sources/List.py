@@ -1,7 +1,8 @@
 from Source import Source
 from Components.Element import cached
 
-class List(Source, object):
+
+class List(Source):
 	"""The datasource of a listbox. Currently, the format depends on the used converter. So
 if you put a simple string list in here, you need to use a StringList converter, if you are
 using a "multi content list styled"-list, you need to use the StaticMultiList converter, and
@@ -9,10 +10,11 @@ setup the "fonts".
 
 This has been done so another converter could convert the list to a different format, for example
 to generate HTML."""
-	def __init__(self, list = [ ], enableWrapAround = False, item_height = 25, fonts = [ ]):
+
+	def __init__(self, list=[], enableWrapAround=False, item_height=25, fonts=[]):
 		Source.__init__(self)
 		self.__list = list
-		self.onSelectionChanged = [ ]
+		self.onSelectionChanged = []
 		self.item_height = item_height
 		self.fonts = fonts
 		self.disable_callbacks = False
@@ -107,26 +109,22 @@ to generate HTML."""
 		self.disable_callbacks = False
 
 	def pageUp(self):
-		if self.getIndex() == 0:
-			self.index = self.count() - 1
-		elif self.getIndex() - 10 < 0:
-			self.index = 0
-		else:
-			self.index -= 10
-		self.setIndex(self.index)
+		try:
+			instance = self.master.master.instance
+			instance.moveSelection(instance.pageUp)
+		except AttributeError:
+			return
 
 	def pageDown(self):
-		if self.getIndex() == self.count() - 1:
-			self.index = 0
-		elif self.getIndex() + 10 >= self.count():
-			self.index = self.count() - 1
-		else:
-			self.index += 10
-		self.setIndex(self.index)
+		try:
+			instance = self.master.master.instance
+			instance.moveSelection(instance.pageDown)
+		except AttributeError:
+			return
 
 	def up(self):
 		self.selectPrevious()
-		
+
 	def down(self):
 		self.selectNext()
 

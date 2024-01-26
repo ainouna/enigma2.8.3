@@ -23,13 +23,13 @@ class eDVBChannel;
 	   (and how to deallocate it). */
 class iDVBAdapter;
 
-class eDVBRegisteredFrontend: public iObject, public Object
+class eDVBRegisteredFrontend: public iObject, public sigc::trackable
 {
 	DECLARE_REF(eDVBRegisteredFrontend);
 	ePtr<eTimer> disable;
 	void closeFrontend();
 public:
-	Signal0<void> stateChanged;
+	sigc::signal0<void> stateChanged;
 	eDVBRegisteredFrontend(eDVBFrontend *fe, iDVBAdapter *adap)
 		:disable(eTimer::create(eApp)), m_adapter(adap), m_frontend(fe), m_inuse(0)
 	{
@@ -154,7 +154,7 @@ public:
 #endif // SWIG
 
 SWIG_IGNORE(eDVBResourceManager);
-class eDVBResourceManager: public iObject, public Object
+class eDVBResourceManager: public iObject, public sigc::trackable
 {
 	DECLARE_REF(eDVBResourceManager);
 	int avail, busy;
@@ -163,6 +163,7 @@ class eDVBResourceManager: public iObject, public Object
 	eSmartPtrList<eDVBRegisteredDemux> m_demux;
 	eSmartPtrList<eDVBRegisteredFrontend> m_frontend, m_simulate_frontend;
 	void addAdapter(iDVBAdapter *adapter, bool front = false);
+	void setUsbTuner();
 
 	struct active_channel
 	{
@@ -184,10 +185,10 @@ class eDVBResourceManager: public iObject, public Object
 	RESULT addChannel(const eDVBChannelID &chid, eDVBChannel *ch);
 	RESULT removeChannel(eDVBChannel *ch);
 
-	Signal1<void,eDVBChannel*> m_channelAdded;
+	sigc::signal1<void,eDVBChannel*> m_channelAdded;
 
 	eUsePtr<iDVBChannel> m_cached_channel;
-	Connection m_cached_channel_state_changed_conn;
+	sigc::connection m_cached_channel_state_changed_conn;
 	ePtr<eTimer> m_releaseCachedChannelTimer;
 	void DVBChannelStateChanged(iDVBChannel*);
 	void feStateChanged();
@@ -211,7 +212,7 @@ public:
 		errNoSourceFound = -7,
 	};
 
-	RESULT connectChannelAdded(const Slot1<void,eDVBChannel*> &channelAdded, ePtr<eConnection> &connection);
+	RESULT connectChannelAdded(const sigc::slot1<void,eDVBChannel*> &channelAdded, ePtr<eConnection> &connection);
 	int canAllocateChannel(const eDVBChannelID &channelid, const eDVBChannelID &ignore, int &system, bool simulate=false);
 
 		/* allocate channel... */
@@ -242,7 +243,7 @@ public:
 	bool frontendIsCompatible(int index, const char *type);
 	bool frontendIsMultistream(int index);
 	std::string getFrontendCapabilities(int index);
-	void setFrontendType(int index, const char *type);
+	void setFrontendType(int index, const char *types);
 };
 SWIG_TEMPLATE_TYPEDEF(ePtr<eDVBResourceManager>, eDVBResourceManager);
 SWIG_EXTEND(ePtr<eDVBResourceManager>,
@@ -258,7 +259,7 @@ SWIG_EXTEND(ePtr<eDVBResourceManager>,
 class eDVBChannelFilePush;
 
 	/* iDVBPVRChannel includes iDVBChannel. don't panic. */
-class eDVBChannel: public iDVBPVRChannel, public iFilePushScatterGather, public Object
+class eDVBChannel: public iDVBPVRChannel, public iFilePushScatterGather, public sigc::trackable
 {
 	DECLARE_REF(eDVBChannel);
 	friend class eDVBResourceManager;
@@ -271,8 +272,8 @@ public:
 	RESULT setChannel(const eDVBChannelID &id, ePtr<iDVBFrontendParameters> &feparam);
 	eDVBChannelID getChannelID() { return m_channel_id; }
 
-	RESULT connectStateChange(const Slot1<void,iDVBChannel*> &stateChange, ePtr<eConnection> &connection);
-	RESULT connectEvent(const Slot2<void,iDVBChannel*,int> &eventChange, ePtr<eConnection> &connection);
+	RESULT connectStateChange(const sigc::slot1<void,iDVBChannel*> &stateChange, ePtr<eConnection> &connection);
+	RESULT connectEvent(const sigc::slot2<void,iDVBChannel*,int> &eventChange, ePtr<eConnection> &connection);
 
 	RESULT getState(int &state);
 
@@ -296,14 +297,15 @@ public:
 
 	RESULT requestTsidOnid();
 	int reserveDemux();
+	int getDvrId();
 private:
 	ePtr<eDVBAllocatedFrontend> m_frontend;
 	ePtr<eDVBAllocatedDemux> m_demux, m_decoder_demux;
 
 	ePtr<iDVBFrontendParameters> m_current_frontend_parameters;
 	eDVBChannelID m_channel_id;
-	Signal1<void,iDVBChannel*> m_stateChanged;
-	Signal2<void,iDVBChannel*,int> m_event;
+	sigc::signal1<void,iDVBChannel*> m_stateChanged;
+	sigc::signal2<void,iDVBChannel*,int> m_event;
 	int m_state;
 	ePtr<iTsSource> m_source;
 
@@ -314,7 +316,7 @@ private:
 	ePtr<eConnection> m_conn_frontendStateChanged;
 
 		/* for PVR playback */
-	eDVBChannelFilePush *m_pvr_thread;
+	ePtr<eDVBChannelFilePush> m_pvr_thread;
 	void pvrEvent(int event);
 
 	int m_pvr_fd_dst;
@@ -328,7 +330,7 @@ private:
 	int m_skipmode_m, m_skipmode_n, m_skipmode_frames, m_skipmode_frames_remainder;
 
 	std::list<std::pair<off_t, off_t> > m_source_span;
-	void getNextSourceSpan(off_t current_offset, size_t bytes_read, off_t &start, size_t &size, int blocksize);
+	void getNextSourceSpan(off_t current_offset, size_t bytes_read, off_t &start, size_t &size, int blocksize, int &sof);
 	void flushPVR(iDVBDemux *decoding_demux=0);
 
 	eSingleLock m_cuesheet_lock;

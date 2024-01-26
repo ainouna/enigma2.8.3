@@ -1,5 +1,6 @@
 from Screens.Screen import Screen
 from Screens.ChannelSelection import FLAG_IS_DEDICATED_3D
+from Components.Label import Label
 from Components.ConfigList import ConfigListScreen
 from Components.ServiceEventTracker import ServiceEventTracker
 from Components.SystemInfo import SystemInfo
@@ -9,21 +10,12 @@ from enigma import iPlayableService, iServiceInformation, eServiceCenter, eServi
 modelist = {"off": _("Off"), "auto": _("Auto"), "sidebyside": _("Side by side"), "topandbottom": _("Top and bottom")}
 
 config.plugins.OSD3DSetup = ConfigSubsection()
-config.plugins.OSD3DSetup.mode = ConfigSelection(choices = modelist, default = "auto")
-config.plugins.OSD3DSetup.znorm = ConfigInteger(default = 0)
+config.plugins.OSD3DSetup.mode = ConfigSelection(choices=modelist, default="auto")
+config.plugins.OSD3DSetup.znorm = ConfigInteger(default=0)
 
-class OSD3DSetupScreen(Screen, ConfigListScreen):
-	skin = """
-	<screen position="c-200,c-100" size="400,200" title="OSD 3D setup">
-		<widget name="config" position="c-175,c-75" size="350,150" />
-		<ePixmap pixmap="skin_default/buttons/green.png" position="c-145,e-45" zPosition="0" size="140,40" alphatest="on" />
-		<ePixmap pixmap="skin_default/buttons/red.png" position="c+5,e-45" zPosition="0" size="140,40" alphatest="on" />
-		<widget name="ok" position="c-145,e-45" size="140,40" valign="center" halign="center" zPosition="1" font="Regular;20" transparent="1" backgroundColor="green" />
-		<widget name="cancel" position="c+5,e-45" size="140,40" valign="center" halign="center" zPosition="1" font="Regular;20" transparent="1" backgroundColor="red" />
-	</screen>"""
 
+class OSD3DSetupScreen(ConfigListScreen, Screen):
 	def __init__(self, session):
-		self.skin = OSD3DSetupScreen.skin
 		Screen.__init__(self, session)
 
 		self.setTitle(_("OSD 3D setup"))
@@ -31,8 +23,8 @@ class OSD3DSetupScreen(Screen, ConfigListScreen):
 		from Components.ActionMap import ActionMap
 		from Components.Button import Button
 
-		self["ok"] = Button(_("OK"))
-		self["cancel"] = Button(_("Cancel"))
+		self["key_red"] = Label(_("Cancel"))
+		self["key_green"] = Label(_("Save"))
 
 		self["actions"] = ActionMap(["SetupActions", "ColorActions", "MenuActions"],
 		{
@@ -45,17 +37,16 @@ class OSD3DSetupScreen(Screen, ConfigListScreen):
 		}, -2)
 
 		self.list = []
-		ConfigListScreen.__init__(self, self.list, session = self.session)
+		ConfigListScreen.__init__(self, self.list, session=self.session)
 
 		mode = config.plugins.OSD3DSetup.mode.value
 		znorm = config.plugins.OSD3DSetup.znorm.value
 
-		self.mode = ConfigSelection(choices = modelist, default = mode)
-		self.znorm = ConfigSlider(default = znorm + 50, increment = 1, limits = (0, 100))
+		self.mode = ConfigSelection(choices=modelist, default=mode)
+		self.znorm = ConfigSlider(default=znorm + 50, increment=1, limits=(0, 100))
 		self.list.append(getConfigListEntry(_("3d mode"), self.mode))
 		self.list.append(getConfigListEntry(_("Depth"), self.znorm))
 		self["config"].list = self.list
-		self["config"].l.setList(self.list)
 
 	def keyLeft(self):
 		ConfigListScreen.keyLeft(self)
@@ -78,8 +69,10 @@ class OSD3DSetupScreen(Screen, ConfigListScreen):
 		applySettings()
 		self.close()
 
+
 previous = None
 isDedicated3D = False
+
 
 def applySettings(mode=config.plugins.OSD3DSetup.mode.value, znorm=int(config.plugins.OSD3DSetup.znorm.value)):
 	global previous, isDedicated3D
@@ -93,12 +86,11 @@ def applySettings(mode=config.plugins.OSD3DSetup.mode.value, znorm=int(config.pl
 		except:
 			return
 
+
 class auto3D(Screen):
 	def __init__(self, session):
 		Screen.__init__(self, session)
-		self.session = session
-		self.__event_tracker = ServiceEventTracker(screen = self, eventmap =
-			{
+		self.__event_tracker = ServiceEventTracker(screen=self, eventmap={
 				iPlayableService.evStart: self.__evStart
 			})
 
@@ -125,20 +117,25 @@ class auto3D(Screen):
 			else:
 				applySettings()
 
+
 def main(session, **kwargs):
 	session.open(OSD3DSetupScreen)
 
+
 def startSetup(menuid):
-	if menuid != "system":
-		return [ ]
-	return [(_("OSD 3D setup"), main, "auto_3d_setup", 0)]
+	# show only in the menu when set at expert level
+	if menuid == "video" and config.usage.setup_level.index == 2:
+		return [(_("OSD 3D setup"), main, "auto_3d_setup", 0)]
+	return []
+
 
 def autostart(reason, **kwargs):
 	"session" in kwargs and kwargs["session"].open(auto3D)
 
+
 def Plugins(**kwargs):
 	if SystemInfo["3DMode"]:
 		from Plugins.Plugin import PluginDescriptor
-		return [PluginDescriptor(where = [PluginDescriptor.WHERE_SESSIONSTART], fnc = autostart),
-			PluginDescriptor(name = "OSD 3D setup", description = _("Adjust 3D settings"), where = PluginDescriptor.WHERE_MENU, fnc = startSetup)]
+		return [PluginDescriptor(where=[PluginDescriptor.WHERE_SESSIONSTART], fnc=autostart),
+			PluginDescriptor(name=_("OSD 3D setup"), description=_("Adjust 3D settings"), where=PluginDescriptor.WHERE_MENU, fnc=startSetup)]
 	return []

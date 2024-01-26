@@ -55,23 +55,10 @@ void eDVBSubtitleParser::subtitle_process_line(subtitle_region *region, subtitle
 	int x = subcentered ? (region->width - len) /2 : object->object_horizontal_position;
 	int y = object->object_vertical_position + line;
 	if (x + len > region->width)
-	{
 		len = region->width - x;
-	}
-	if (len < 0)
+	if (len < 0 || y >= region->height)
 		return;
-	if (y >= region->height)
-	{
-		return;
-	}
-	if( subcentered && region->region_id && line < 3 )
-	{
-		for (int i = 0; i < len; i++ )
-			if( data[i] <= 8)
-			{
-				data[i] = 0;
-			}
-	}
+
 	memcpy((uint8_t*)region->buffer->surface->data + region->buffer->surface->stride * y + x, data, len);
 }
 
@@ -331,15 +318,19 @@ int eDVBSubtitleParser::subtitle_process_segment(uint8_t *segment)
 
 		page->state = page_state;
 
-		// when acquisition point or mode change: remove all displayed pages.
+		// Clear page_region list before processing any type of PCS
+		while (page->page_regions)
+		{
+			subtitle_page_region *p = page->page_regions->next;
+			delete page->page_regions;
+			page->page_regions = p;
+		}
+		page->page_regions=0;
+
+		// when acquisition point or mode change: remove all displayed regions.
 		if ((page_state == 1) || (page_state == 2))
 		{
-			while (page->page_regions)
-			{
-				subtitle_page_region *p = page->page_regions->next;
-				delete page->page_regions;
-				page->page_regions = p;
-			}
+
 			while (page->regions)
 			{
 				subtitle_region *p = page->regions->next;
@@ -365,9 +356,6 @@ int eDVBSubtitleParser::subtitle_process_segment(uint8_t *segment)
 		while (*r)
 			r = &(*r)->next;
 
-		if (processed_length == segment_length && !page->page_regions)
-			subtitle_redraw(page->page_id);
-
 		while (processed_length < segment_length)
 		{
 			subtitle_page_region *pr;
@@ -390,8 +378,6 @@ int eDVBSubtitleParser::subtitle_process_segment(uint8_t *segment)
 			processed_length += 2;
 		}
 
-		if (processed_length != segment_length)
-			eDebug("[eDVBSubtitleParser] %d != %d", processed_length, segment_length);
 		break;
 	}
 	case 0x11: // region composition segment
@@ -425,6 +411,7 @@ int eDVBSubtitleParser::subtitle_process_segment(uint8_t *segment)
 		{
 			*pregion = region = new subtitle_region;
 			region->next = 0;
+			region->buffer=0;
 			region->committed = false;
 		}
 		else if (region->version_number != version_number)
@@ -436,11 +423,6 @@ int eDVBSubtitleParser::subtitle_process_segment(uint8_t *segment)
 				delete objects;
 				objects = n;
 			}
-			if (region->buffer)
-			{
-				region->buffer=0;
-			}
-			region->committed = false;
 		}
 		else
 			break;
@@ -455,9 +437,6 @@ int eDVBSubtitleParser::subtitle_process_segment(uint8_t *segment)
 		region->height  = *segment++ << 8;
 		region->height |= *segment++;
 		processed_length += 2;
-
-		region->buffer = new gPixmap(eSize(region->width, region->height), 8, 1);
-		memset(region->buffer->surface->data, 0, region->height * region->buffer->surface->stride);
 
 		int depth;
 		depth = (*segment++ >> 2) & 7;
@@ -481,16 +460,23 @@ int eDVBSubtitleParser::subtitle_process_segment(uint8_t *segment)
 			region_fill_flag = 1;
 		}
 
-		if (region_fill_flag)
-		{
-			if (depth == 1)
-				memset(region->buffer->surface->data, region_2bit_pixel_code, region->height * region->width);
-			else if (depth == 2)
-				memset(region->buffer->surface->data, region_4bit_pixel_code, region->height * region->width);
-			else if (depth == 3)
-				memset(region->buffer->surface->data, region_8bit_pixel_code, region->height * region->width);
-			else
-				eDebug("[eDVBSubtitleParser] !!!! invalid depth");
+//	create and initialise buffer only when buffer does not yet exist.
+
+		if (region->buffer==0) {
+			region->buffer = new gPixmap(eSize(region->width, region->height), 8, 1);
+			memset(region->buffer->surface->data, 0, region->height * region->buffer->surface->stride);
+
+			if (region_fill_flag)
+			{
+				if (depth == 1)
+					memset(region->buffer->surface->data, region_2bit_pixel_code, region->height * region->width);
+				else if (depth == 2)
+					memset(region->buffer->surface->data, region_4bit_pixel_code, region->height * region->width);
+				else if (depth == 3)
+					memset(region->buffer->surface->data, region_8bit_pixel_code, region->height * region->width);
+				else
+					eDebug("[eDVBSubtitleParser] !!!! invalid depth");
+			}
 		}
 
 		region->objects = 0;
@@ -515,7 +501,7 @@ int eDVBSubtitleParser::subtitle_process_segment(uint8_t *segment)
 			object->object_horizontal_position |= *segment++;
 			processed_length += 2;
 
-			object->object_vertical_position  = *segment++ << 8;
+			object->object_vertical_position  = (*segment++ & 0xF) << 8;
 			object->object_vertical_position |= *segment++ ;
 			processed_length += 2;
 
@@ -812,11 +798,9 @@ void eDVBSubtitleParser::subtitle_process_pes(uint8_t *pkt, int len)
 
 		if (len && *pkt != 0xFF)
 			eDebug("[eDVBSubtitleParser] strange data at the end");
-
-		if (!m_seen_eod)
-			subtitle_redraw_all();
 	}
 }
+
 
 void eDVBSubtitleParser::subtitle_redraw_all()
 {
@@ -902,9 +886,6 @@ void eDVBSubtitleParser::subtitle_redraw(int page_id)
 		}
 		if (reg)
 		{
-			if (reg->committed)
-				continue;
-
 			int x0 = region->region_horizontal_address;
 			int y0 = region->region_vertical_address;
 
@@ -933,7 +914,7 @@ void eDVBSubtitleParser::subtitle_redraw(int page_id)
 				case subtitle_region::bpp2:
 					if (clut)
 						entries = clut->entries_2bit;
-					memset(palette, 0, 4 * sizeof(gRGB));
+					memset(static_cast<void*>(palette), 0, 4 * sizeof(gRGB));
 					// this table is tested on cyfra .. but in EN300743 the table palette[2] and palette[1] is swapped.. i dont understand this ;)
 					palette[0].a = 0xFF;
 					palette[2].r = palette[2].g = palette[2].b = 0xFF;
@@ -942,7 +923,7 @@ void eDVBSubtitleParser::subtitle_redraw(int page_id)
 				case subtitle_region::bpp4: // tested on cyfra... but the map is another in EN300743... dont understand this...
 					if (clut)
 						entries = clut->entries_4bit;
-					memset(palette, 0, 16*sizeof(gRGB));
+					memset(static_cast<void*>(palette), 0, 16*sizeof(gRGB));
 					for (int i=0; i < 16; ++i)
 					{
 						if (!i)
@@ -970,7 +951,7 @@ void eDVBSubtitleParser::subtitle_redraw(int page_id)
 				case subtitle_region::bpp8:  // completely untested.. i never seen 8bit DVB subtitles
 					if (clut)
 						entries = clut->entries_8bit;
-					memset(palette, 0, 256*sizeof(gRGB));
+					memset(static_cast<void*>(palette), 0, 256*sizeof(gRGB));
 					for (int i=0; i < 256; ++i)
 					{
 						switch (i & 17)
@@ -992,7 +973,7 @@ void eDVBSubtitleParser::subtitle_redraw(int page_id)
 								}
 								break;
 							}
-							// fallthrough !!
+							[[fallthrough]];
 						case 16: // b1 == 0 && b5 == 1
 							if (i & 128) // R = 33% x b8
 								palette[i].r = 0x55;
@@ -1013,7 +994,7 @@ void eDVBSubtitleParser::subtitle_redraw(int page_id)
 							palette[i].r =
 							palette[i].g =
 							palette[i].b = 0x80; // 50%
-							// fall through!!
+							[[fallthrough]];
 						case 17: // b1 == 1 && b5 == 1
 							if (i & 128) // R += 16.7% x b8
 								palette[i].r += 0x2A;
@@ -1094,7 +1075,7 @@ eDVBSubtitleParser::eDVBSubtitleParser(iDVBDemux *demux)
 	if (demux->createPESReader(eApp, m_pes_reader))
 		eDebug("[eDVBSubtitleParser] failed to create PES reader!");
 	else
-		m_pes_reader->connectRead(slot(*this, &eDVBSubtitleParser::processData), m_read_connection);
+		m_pes_reader->connectRead(sigc::mem_fun(*this, &eDVBSubtitleParser::processData), m_read_connection);
 }
 
 eDVBSubtitleParser::~eDVBSubtitleParser()
@@ -1125,7 +1106,7 @@ int eDVBSubtitleParser::start(int pid, int composition_page_id, int ancillary_pa
 	return -1;
 }
 
-void eDVBSubtitleParser::connectNewPage(const Slot1<void, const eDVBSubtitlePage&> &slot, ePtr<eConnection> &connection)
+void eDVBSubtitleParser::connectNewPage(const sigc::slot1<void, const eDVBSubtitlePage&> &slot, ePtr<eConnection> &connection)
 {
 	connection = new eConnection(this, m_new_subtitle_page.connect(slot));
 }

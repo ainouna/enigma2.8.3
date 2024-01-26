@@ -11,12 +11,13 @@
 class iFilePushScatterGather
 {
 public:
-	virtual void getNextSourceSpan(off_t current_offset, size_t bytes_read, off_t &start, size_t &size, int blocksize)=0;
+	virtual void getNextSourceSpan(off_t current_offset, size_t bytes_read, off_t &start, size_t &size, int blocksize, int &sof)=0;
 	virtual ~iFilePushScatterGather() {}
 };
 
-class eFilePushThread: public eThread, public Object
+class eFilePushThread: public eThread, public sigc::trackable, public iObject
 {
+	DECLARE_REF(eFilePushThread);
 public:
 	eFilePushThread(int blocksize, size_t buffersize);
 	~eFilePushThread();
@@ -33,7 +34,7 @@ public:
 	void setScatterGather(iFilePushScatterGather *);
 
 	enum { evtEOF, evtReadError, evtWriteError, evtUser, evtStopped };
-	Signal1<void,int> m_event;
+	sigc::signal1<void,int> m_event;
 
 		/* you can send private events if you want */
 	void sendEvent(int evt);
@@ -42,9 +43,11 @@ protected:
 private:
 	iFilePushScatterGather *m_sg;
 	int m_stop;
+	bool m_stopped;
 	int m_fd_dest;
 	int m_send_pvr_commit;
 	int m_stream_mode;
+	int m_sof;
 	int m_blocksize;
 	size_t m_buffersize;
 	unsigned char* m_buffer;
@@ -60,7 +63,7 @@ private:
 	void recvEvent(const int &evt);
 };
 
-class eFilePushThreadRecorder: public eThread, public Object
+class eFilePushThreadRecorder: public eThread, public sigc::trackable
 {
 public:
 	eFilePushThreadRecorder(unsigned char* buffer, size_t buffersize);
@@ -69,7 +72,7 @@ public:
 	void start(int sourcefd);
 
 	enum { evtEOF, evtReadError, evtWriteError, evtUser, evtStopped };
-	Signal1<void,int> m_event;
+	sigc::signal1<void,int> m_event;
 
 	void sendEvent(int evt);
 protected:
@@ -87,6 +90,7 @@ protected:
 	unsigned int m_overflow_count;
 private:
 	int m_stop;
+	bool m_stopped;
 	eFixedMessagePump<int> m_messagepump;
 	void recvEvent(const int &evt);
 };

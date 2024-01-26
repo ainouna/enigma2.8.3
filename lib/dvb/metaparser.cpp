@@ -28,7 +28,7 @@ static int getctime(const std::string &basename)
 static long long fileSize(const std::string &basename)
 {
 	long long filesize = 0;
-	char buf[8];
+	char buf[16];
 	std::string splitname;
 	struct stat64 s;
 
@@ -114,7 +114,7 @@ int eDVBMetaParser::parseMeta(const std::string &tsname)
 			m_tags = line;
 			break;
 		case 5:
-			m_length = atoi(line);  //movielength in pts
+			m_length = atoll(line);  //movielength in pts
 			break;
 		case 6:
 			m_filesize = atoll(line);
@@ -209,6 +209,10 @@ int eDVBMetaParser::updateMeta(const std::string &tsname)
 	eServiceReference ref = m_ref;
 	ref.path = "";
 
+	/* To make sure you only modify the meta file you're looking at, and not one that is hardlinked to this one, remove the file first.
+	 * We don't care about the result - if it doesn't exist that's also just fine. */
+	::unlink(filename.c_str());
+
 	CFile f(filename.c_str(), "w");
 	if (!f)
 		return -ENOENT;
@@ -227,6 +231,6 @@ int eDVBMetaParser::updateMeta(const std::string &tsname)
 		}
 	}
 
-	fprintf(f, "%s\n%s\n%s\n%d\n%s\n%d\n%lld\n%s\n%d\n%d\n", ref.toString().c_str(), m_name.c_str(), m_description.c_str(), m_time_create, m_tags.c_str(), m_length, m_filesize, m_service_data.c_str(), m_packet_size, m_scrambled);
+	fprintf(f, "%s\n%s\n%s\n%d\n%s\n%lld\n%lld\n%s\n%d\n%d\n", ref.toString().c_str(), m_name.c_str(), m_description.c_str(), m_time_create, m_tags.c_str(), m_length, m_filesize, m_service_data.c_str(), m_packet_size, m_scrambled);
 	return 0;
 }

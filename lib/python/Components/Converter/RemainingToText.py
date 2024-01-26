@@ -1,13 +1,15 @@
 from Components.Converter.Converter import Converter
 from Components.Element import cached
 
-class RemainingToText(Converter, object):
+
+class RemainingToText(Converter):
 	DEFAULT = 0
 	WITH_SECONDS = 1
 	NO_SECONDS = 2
 	IN_SECONDS = 3
 	PROGRESS = 4
 	WITH_SECONDSPROGRESS = 5
+	ONLY_MINUTES = 6
 
 	def __init__(self, type):
 		Converter.__init__(self, type)
@@ -21,6 +23,8 @@ class RemainingToText(Converter, object):
 			self.type = self.PROGRESS
 		elif type == "WithSecondsProgress":
 			self.type = self.WITH_SECONDSPROGRESS
+		elif type == "OnlyMinutes":
+			self.type = self.ONLY_MINUTES
 		else:
 			self.type = self.DEFAULT
 
@@ -31,6 +35,7 @@ class RemainingToText(Converter, object):
 			(duration, remaining) = self.source.time
 			if duration and remaining:
 				prefix = ""
+				suffix = ""
 				tsecs = remaining
 				if self.type == self.PROGRESS or self.type == self.WITH_SECONDSPROGRESS:
 					tsecs = duration - tsecs
@@ -51,11 +56,13 @@ class RemainingToText(Converter, object):
 				elif self.type == self.NO_SECONDS or self.type == self.PROGRESS:
 					return "%s%d:%02d" % (prefix, hours, minutes)
 				elif self.type == self.IN_SECONDS:
-					return prefix+str(tsecs)
-				elif self.type == self.DEFAULT:
+					return prefix + str(tsecs)
+				elif self.type == self.DEFAULT or self.type == self.ONLY_MINUTES:
 					if remaining <= duration:
 						prefix = "+"
-					return _("%s%d min") % (prefix, tsecs / 60)
+					if self.type == self.DEFAULT:
+						suffix = _(" min")
+					return "%s%d%s" % (prefix, tsecs / 60, suffix)
 				else:
 					return "???"
 		return ""

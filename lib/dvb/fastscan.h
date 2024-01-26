@@ -14,6 +14,7 @@
 #include <dvbsi++/network_name_descriptor.h>
 #include <dvbsi++/service_list_descriptor.h>
 #include <dvbsi++/satellite_delivery_system_descriptor.h>
+#include <dvbsi++/s2_satellite_delivery_system_descriptor.h>
 
 /* HACK: fastscan table uses a nonstandard version of the LogicalChannel descriptor, with 14bit channel numbers (instead of 10bit), and a nonstandard definition of a 'hidden' flag */
 class FastScanLogicalChannel
@@ -115,6 +116,7 @@ public:
 	uint16_t getOriginalNetworkId(void) const;
 	uint16_t getTransportStreamId(void) const;
 	uint16_t getOrbitalPosition(void) const;
+	uint8_t getWestEastFlag(void) const;
 	uint32_t getFrequency(void) const;
 	uint8_t getPolarization(void) const;
 	uint8_t getRollOff(void) const;
@@ -196,7 +198,7 @@ public:
 		tableProgress(seen.size(), max);
 		return eTable<Section>::createTable(nr, data, max);
 	}
-	Signal2<void, int, int> tableProgress;
+	sigc::signal2<void, int, int> tableProgress;
 };
 
 template <class Section>
@@ -219,7 +221,7 @@ public:
 
 #endif /* no SWIG */
 
-class eFastScan: public Object, public iObject
+class eFastScan: public sigc::trackable, public iObject
 {
 	DECLARE_REF(eFastScan);
 

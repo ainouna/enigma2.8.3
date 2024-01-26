@@ -2,15 +2,16 @@ import skin
 
 from enigma import ePoint, eSize
 
+
 class GUIComponent(object):
 	""" GUI component """
 
 	def __init__(self):
 		self.instance = None
-		self.onVisibilityChange = [ ]
-		self.__visible = 0
-		self.visible = 1
-		self.skinAttributes = None
+		self.onVisibilityChange = []
+		self.__visible = False
+		self.visible = True
+		self.skinAttributes = []
 		self.deprecationInfo = None
 
 	def execBegin(self):
@@ -33,20 +34,19 @@ class GUIComponent(object):
 		if not self.visible:
 			self.instance.hide()
 
-		if self.skinAttributes is None:
-			return False
+		if self.skinAttributes:
+			skin.applyAllAttributes(self.instance, desktop, self.skinAttributes, parent.scale)
+			return True
+		return False
 
-		skin.applyAllAttributes(self.instance, desktop, self.skinAttributes, parent.scale)
-		return True
-
-	def move(self, x, y = None):
+	def move(self, x, y=None):
 		# we assume, that x is already an ePoint
 		if y is None:
 			self.instance.move(x)
 		else:
 			self.instance.move(ePoint(int(x), int(y)))
 
-	def resize(self, x, y = None):
+	def resize(self, x, y=None):
 		self.width = x
 		self.height = y
 		if y is None:
@@ -58,20 +58,18 @@ class GUIComponent(object):
 		self.instance.setZPosition(z)
 
 	def show(self):
-		old = self.__visible
-		self.__visible = 1
-		if self.instance is not None:
-			self.instance.show()
-		if old != self.__visible:
+		if not self.__visible:
+			self.__visible = True
+			if self.instance:
+				self.instance.show()
 			for fnc in self.onVisibilityChange:
 				fnc(True)
 
 	def hide(self):
-		old = self.__visible
-		self.__visible = 0
-		if self.instance is not None:
-			self.instance.hide()
-		if old != self.__visible:
+		if self.__visible:
+			self.__visible = False
+			if self.instance:
+				self.instance.hide()
 			for fnc in self.onVisibilityChange:
 				fnc(False)
 

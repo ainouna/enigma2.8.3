@@ -303,3 +303,25 @@ std::string base64decode(const std::string hash)
 
 	return ret;
 }
+
+std::string readLink(const std::string &link)
+{
+	char buf[256];
+	ssize_t size = ::readlink(link.c_str(), buf, sizeof(buf));
+	return std::string(buf, (size > 0) ? size : 0);
+}
+
+bool contains(const std::string &str, const std::string &substr)
+{
+        return substr.size() && str.size() >= substr.size() && str.find(substr) != std::string::npos;
+}
+
+bool endsWith(const std::string &str, const std::string &suffix)
+{
+        return suffix.size() && str.size() >= suffix.size() && str.find(suffix) + suffix.size() == str.size();
+}
+
+bool startsWith(const std::string& str, const std::string& prefix)
+{
+        return prefix.size() && str.size() >= prefix.size() && str.find(prefix) == 0;
+}

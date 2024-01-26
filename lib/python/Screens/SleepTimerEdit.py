@@ -9,26 +9,26 @@ from Components.config import config, getConfigListEntry
 from enigma import eEPGCache
 from time import time, localtime, mktime
 
+
 class SleepTimerEdit(ConfigListScreen, Screen):
 	def __init__(self, session):
 		Screen.__init__(self, session)
 		self.skinName = ["SleepTimerSetup", "Setup"]
-		self.setup_title = _("SleepTimer Configuration")
-		self.setTitle(self.setup_title)
+		self.setTitle(_("SleepTimer Configuration"))
 		self["key_red"] = StaticText(_("Cancel"))
 		self["key_green"] = StaticText(_("Save"))
 		self["description"] = Label("")
 
 		self.list = []
-		ConfigListScreen.__init__(self, self.list, session = session)
+		ConfigListScreen.__init__(self, self.list, session=session)
 		self.createSetup()
 
 		self["setupActions"] = ActionMap(["SetupActions", "ColorActions"],
 		{
-		    "green": self.ok,
-		    "red": self.cancel,
-		    "cancel": self.cancel,
-		    "ok": self.ok,
+			"green": self.ok,
+			"red": self.cancel,
+			"cancel": self.cancel,
+			"ok": self.ok,
 		}, -2)
 
 	def createSetup(self):
@@ -46,7 +46,7 @@ class SleepTimerEdit(ConfigListScreen, Screen):
 		if int(config.usage.inactivity_timer.value):
 			self.list.append(getConfigListEntry(_("Specify timeframe to ignore inactivity sleeptimer"),
 				config.usage.inactivity_timer_blocktime,
-				_("When enabled you can specify a timeframe were the inactivity sleeptimer is ignored. Not the detection is disabled during this timeframe but the inactivity timeout is disabled")))
+				_("When enabled you can specify a timeframe when the inactivity sleeptimer is ignored. Not the detection is disabled during this timeframe but the inactivity timeout is disabled")))
 			if config.usage.inactivity_timer_blocktime.value:
 				self.list.append(getConfigListEntry(_("Set blocktimes by weekday"),
 					config.usage.inactivity_timer_blocktime_by_weekdays,
@@ -64,7 +64,7 @@ class SleepTimerEdit(ConfigListScreen, Screen):
 								_("Specify the end time until the inactivity sleeptimer should be ignored")))
 							self.list.append(getConfigListEntry(_("Specify extra timeframe to ignore inactivity sleeptimer"),
 								config.usage.inactivity_timer_blocktime_extra_day[i],
-								_("When enabled you can specify an extra timeframe were the inactivity sleeptimer is ignored. Not the detection is disabled during this timeframe but the inactivity timeout is disabled")))
+								_("When enabled you can specify an extra timeframe when the inactivity sleeptimer is ignored. Not the detection is disabled during this timeframe but the inactivity timeout is disabled")))
 							if config.usage.inactivity_timer_blocktime_extra_day[i].value:
 								self.list.append(getConfigListEntry(_("Extra start time to ignore inactivity sleeptimer"),
 									config.usage.inactivity_timer_blocktime_extra_begin_day[i],
@@ -81,7 +81,7 @@ class SleepTimerEdit(ConfigListScreen, Screen):
 						_("Specify the end time until the inactivity sleeptimer should be ignored")))
 					self.list.append(getConfigListEntry(_("Specify extra timeframe to ignore inactivity sleeptimer"),
 						config.usage.inactivity_timer_blocktime_extra,
-						_("When enabled you can specify an extra timeframe were the inactivity sleeptimer is ignored. Not the detection is disabled during this timeframe but the inactivity timeout is disabled")))
+						_("When enabled you can specify an extra timeframe when the inactivity sleeptimer is ignored. Not the detection is disabled during this timeframe but the inactivity timeout is disabled")))
 					if config.usage.inactivity_timer_blocktime_extra.value:
 						self.list.append(getConfigListEntry(_("Extra start time to ignore inactivity sleeptimer"),
 							config.usage.inactivity_timer_blocktime_extra_begin,
@@ -113,11 +113,38 @@ class SleepTimerEdit(ConfigListScreen, Screen):
 				if config.usage.wakeup_day[i].value:
 					self.list.append(getConfigListEntry(_("Wakeup time"),
 						config.usage.wakeup_time[i]))
+		self.list.append(getConfigListEntry(_("Enable power off timer"),
+			config.usage.poweroff_enabled,
+			_("Automatically power off box to deep standby mode.")))
+		if config.usage.poweroff_enabled.value:
+			for i in range(7):
+				self.list.append(getConfigListEntry([_("Monday"), _("Tuesday"), _("Wednesday"), _("Thursday"), _("Friday"), _("Saturday"), _("Sunday")][i],
+					config.usage.poweroff_day[i]))
+				if config.usage.poweroff_day[i].value:
+					self.list.append(getConfigListEntry(_("Power off time"),
+						config.usage.poweroff_time[i]))
+			self.list.append(getConfigListEntry(_("Next day starts at"),
+				config.usage.poweroff_nextday,
+				_("If the box is supposed to enter deep standby e.g. monday night at 1 AM, it actually is already tuesday. To enable this anyway, differing next day start time can be specified here.")))
+			self.list.append(getConfigListEntry(_("Force power off (even when not in standby)"),
+				config.usage.poweroff_force,
+				_("Forces deep standby, even when not in standby mode. Scheduled recordings remain unaffected.")))
 		self["config"].list = self.list
-		self["config"].l.setList(self.list)
 
 	def ok(self):
 		if self["config"].isChanged():
+			from Components.PowerOffTimer import powerOffTimer
+			powerOffTimer.powerStateTimerChanged(dont_currentday=powerOffTimer.getDontCurrentday())
+			active_on = active_off = False
+			for i in range(7):
+				if config.usage.wakeup_day[i].value:
+					active_on = True
+				if config.usage.poweroff_day[i].value:
+					active_off = True
+			if not active_on:
+				config.usage.wakeup_enabled.value = "no"
+			if not active_off:
+				config.usage.poweroff_enabled.value = False
 			for x in self["config"].list:
 				x[1].save()
 		if self.getCurrentEntry().startswith(_("Sleeptimer")):
@@ -127,11 +154,11 @@ class SleepTimerEdit(ConfigListScreen, Screen):
 			else:
 				sleepTimer = int(sleepTimer)
 			if sleepTimer or not self.getCurrentEntry().endswith(_("(not activated)")):
-				InfoBar.instance.setSleepTimer(sleepTimer)
+				InfoBar.instance and InfoBar.instance.setSleepTimer(sleepTimer)
 			self.close(True)
 		self.close()
 
-	def cancel(self, answer = None):
+	def cancel(self, answer=None):
 		if answer is None:
 			if self["config"].isChanged():
 				self.session.openWithCallback(self.cancel, MessageBox, _("Really close without saving settings?"))
@@ -154,8 +181,8 @@ class SleepTimerEdit(ConfigListScreen, Screen):
 		remaining = 0
 		ref = self.session.nav.getCurrentlyPlayingServiceReference()
 		if ref:
-			path = ref.getPath()
-			if path: # Movie
+			refstr = ref.toString()
+			if "%3a//" not in refstr and refstr.rsplit(":", 1)[1].startswith("/"): # Movie
 				service = self.session.nav.getCurrentService()
 				seek = service and service.seek()
 				if seek:
@@ -178,6 +205,7 @@ class SleepTimerEdit(ConfigListScreen, Screen):
 			return remaining + config.recording.margin_after.value * 60
 		return remaining
 
+
 def isNextWakeupTime(standby_timer=False):
 	wakeup_enabled = config.usage.wakeup_enabled.value
 	if wakeup_enabled != "no":
@@ -189,11 +217,12 @@ def isNextWakeupTime(standby_timer=False):
 				return -1
 		wakeup_day, wakeup_time = WakeupDayTimeOfWeek()
 		if wakeup_day == -1:
-				return -1
+			return -1
 		elif wakeup_day == 0:
 			return wakeup_time
 		return wakeup_time + (86400 * wakeup_day)
 	return -1
+
 
 def WakeupDayTimeOfWeek():
 	now = localtime()
@@ -203,7 +232,7 @@ def WakeupDayTimeOfWeek():
 			wakeup_time = int(mktime((now.tm_year, now.tm_mon, now.tm_mday, config.usage.wakeup_time[current_day].value[0], config.usage.wakeup_time[current_day].value[1], 0, now.tm_wday, now.tm_yday, now.tm_isdst)))
 			if wakeup_time > time():
 				return 0, wakeup_time
-		for i in range(1,8):
-			if config.usage.wakeup_day[(current_day+i)%7].value:
-				return i, int(mktime((now.tm_year, now.tm_mon, now.tm_mday, config.usage.wakeup_time[(current_day+i)%7].value[0], config.usage.wakeup_time[(current_day+i)%7].value[1], 0, now.tm_wday, now.tm_yday, now.tm_isdst)))
+		for i in range(1, 8):
+			if config.usage.wakeup_day[(current_day + i) % 7].value:
+				return i, int(mktime((now.tm_year, now.tm_mon, now.tm_mday, config.usage.wakeup_time[(current_day + i) % 7].value[0], config.usage.wakeup_time[(current_day + i) % 7].value[1], 0, now.tm_wday, now.tm_yday, now.tm_isdst)))
 	return -1, None

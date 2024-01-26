@@ -9,14 +9,16 @@ from Screens.Screen import Screen
 
 from Plugins.Plugin import PluginDescriptor
 from Components.FanControl import fancontrol
+import skin
 
-class TempFanControl(Screen, ConfigListScreen):
+
+class TempFanControl(ConfigListScreen, Screen):
 	skin = """
 		<screen position="center,center" size="570,420" title="Temperature and fan control" >
-			<ePixmap pixmap="skin_default/buttons/red.png" position="0,0" size="140,40" alphatest="on" />
-			<ePixmap pixmap="skin_default/buttons/green.png" position="140,0" size="140,40" alphatest="on" />
-			<ePixmap pixmap="skin_default/buttons/yellow.png" position="280,0" size="140,40" alphatest="on" />
-			<ePixmap pixmap="skin_default/buttons/blue.png" position="420,0" size="140,40" alphatest="on" />
+			<ePixmap pixmap="buttons/red.png" position="0,0" size="140,40" alphatest="on" />
+			<ePixmap pixmap="buttons/green.png" position="140,0" size="140,40" alphatest="on" />
+			<ePixmap pixmap="buttons/yellow.png" position="280,0" size="140,40" alphatest="on" />
+			<ePixmap pixmap="buttons/blue.png" position="420,0" size="140,40" alphatest="on" />
 			<widget source="red" render="Label" position="0,0" zPosition="1" size="140,40" font="Regular;20" halign="center" valign="center" backgroundColor="#9f1313" transparent="1" />
 			<widget source="green" render="Label" position="140,0" zPosition="1" size="140,40" font="Regular;20" halign="center" valign="center" backgroundColor="#1f771f" transparent="1" />
 			<widget source="yellow" render="Label" position="280,0" zPosition="1" size="140,40" font="Regular;20" halign="center" valign="center" backgroundColor="#a08500" transparent="1" />
@@ -91,7 +93,7 @@ class TempFanControl(Screen, ConfigListScreen):
 			</widget>
 		</screen>"""
 
-	def __init__(self, session, args = None):
+	def __init__(self, session, args=None):
 		Screen.__init__(self, session)
 
 		self.setTitle(_("Temperature and fan control"))
@@ -110,7 +112,7 @@ class TempFanControl(Screen, ConfigListScreen):
 			if count < tempcount:
 				id = templist[count]
 				self["SensorTempText%d" % count] = StaticText(sensors.getSensorName(id))
-				self["SensorTemp%d" % count] = SensorSource(sensorid = id)
+				self["SensorTemp%d" % count] = SensorSource(sensorid=id)
 			else:
 				self["SensorTempText%d" % count] = StaticText("")
 				self["SensorTemp%d" % count] = SensorSource()
@@ -118,7 +120,7 @@ class TempFanControl(Screen, ConfigListScreen):
 			if count < fancount:
 				id = fanlist[count]
 				self["SensorFanText%d" % count] = StaticText(sensors.getSensorName(id))
-				self["SensorFan%d" % count] = SensorSource(sensorid = id)
+				self["SensorFan%d" % count] = SensorSource(sensorid=id)
 			else:
 				self["SensorFanText%d" % count] = StaticText("")
 				self["SensorFan%d" % count] = SensorSource()
@@ -130,10 +132,11 @@ class TempFanControl(Screen, ConfigListScreen):
 			self.list.append(getConfigListEntry(_("Standby fan %d voltage") % (count + 1), fancontrol.getConfig(count).vlt_standby))
 			self.list.append(getConfigListEntry(_("Standby fan %d PWM") % (count + 1), fancontrol.getConfig(count).pwm_standby))
 
-		ConfigListScreen.__init__(self, self.list, session = self.session)
+		ConfigListScreen.__init__(self, self.list, session=self.session)
 		#self["config"].list = self.list
 		#self["config"].setList(self.list)
-		self["config"].l.setSeperation(300)
+		seperation = skin.parameters.get("ConfigListSeperator", 300)
+		self["config"].l.setSeperation(seperation)
 
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "MenuActions"],
 		{
@@ -160,13 +163,16 @@ class TempFanControl(Screen, ConfigListScreen):
 			fancontrol.getConfig(count).pwm_standby.load()
 		self.close()
 
+
 def main(session, **kwargs):
 	session.open(TempFanControl)
+
 
 def startMenu(menuid):
 	if menuid != "system":
 		return []
 	return [(_("Temperature and fan control"), main, "tempfancontrol", 80)]
 
+
 def Plugins(**kwargs):
-	return PluginDescriptor(name = _("Temperature and fan control"), description = _("Temperature and fan control"), where = PluginDescriptor.WHERE_MENU, needsRestart = False, fnc = startMenu)
+	return PluginDescriptor(name=_("Temperature and fan control"), description=_("Temperature and fan control"), where=PluginDescriptor.WHERE_MENU, needsRestart=False, fnc=startMenu)

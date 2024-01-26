@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <dvbsi++/satellite_delivery_system_descriptor.h>
+#include <dvbsi++/s2_satellite_delivery_system_descriptor.h>
 #include <dvbsi++/cable_delivery_system_descriptor.h>
 #include <dvbsi++/terrestrial_delivery_system_descriptor.h>
 #include <dvbsi++/t2_delivery_system_descriptor.h>
@@ -13,10 +14,12 @@
 
 #include <linux/dvb/frontend.h>
 
-struct eDVBFrontendParametersSatellite
+class eDVBFrontendParametersSatellite
 {
+public:
 #ifndef SWIG
 	void set(const SatelliteDeliverySystemDescriptor  &);
+	void set(const S2SatelliteDeliverySystemDescriptor  &);
 #endif
 	enum {
 		Polarisation_Horizontal, Polarisation_Vertical, Polarisation_CircularLeft, Polarisation_CircularRight
@@ -48,14 +51,31 @@ struct eDVBFrontendParametersSatellite
 		Pilot_Off, Pilot_On, Pilot_Unknown
 	};
 
+	enum {
+		PLS_Root, PLS_Gold, PLS_Combo, PLS_Unknown
+	};
+
+	enum {
+		No_Stream_Id_Filter = NO_STREAM_ID_FILTER
+	};
+
+	enum {
+		PLS_Default_Gold_Code, PLS_Default_Root_Code
+	};
+
+	enum {
+		No_T2MI_PLP_Id = eDVBFrontendParametersSatellite::No_Stream_Id_Filter, T2MI_Default_Pid = 4096
+	};
+
 	bool no_rotor_command_on_tune;
 	unsigned int frequency, symbol_rate;
-	int polarisation, fec, inversion, orbital_position, system, modulation, rolloff, pilot;
+	int polarisation, fec, inversion, orbital_position, system, modulation, rolloff, pilot, is_id, pls_mode, pls_code, t2mi_plp_id, t2mi_pid;
 };
 SWIG_ALLOW_OUTPUT_SIMPLE(eDVBFrontendParametersSatellite);
 
-struct eDVBFrontendParametersCable
+class eDVBFrontendParametersCable
 {
+public:
 #ifndef SWIG
 	void set(const CableDeliverySystemDescriptor  &);
 #endif
@@ -84,8 +104,9 @@ struct eDVBFrontendParametersCable
 };
 SWIG_ALLOW_OUTPUT_SIMPLE(eDVBFrontendParametersCable);
 
-struct eDVBFrontendParametersTerrestrial
+class eDVBFrontendParametersTerrestrial
 {
+public:
 #ifndef SWIG
 	void set(const TerrestrialDeliverySystemDescriptor  &);
 	void set(const T2DeliverySystemDescriptor &);
@@ -100,7 +121,7 @@ struct eDVBFrontendParametersTerrestrial
 	 * (and it's too late to fix this now, we would break backward compatibility)
 	 */
 	enum {
-		FEC_1_2=0, FEC_2_3=1, FEC_3_4=2, FEC_5_6=3, FEC_7_8=4, FEC_Auto=5, FEC_6_7=6, FEC_8_9=7
+		FEC_1_2=0, FEC_2_3=1, FEC_3_4=2, FEC_5_6=3, FEC_7_8=4, FEC_Auto=5, FEC_6_7=6, FEC_8_9=7, FEC_3_5=8, FEC_4_5=9
 	};
 
 	enum {
@@ -140,8 +161,9 @@ struct eDVBFrontendParametersTerrestrial
 };
 SWIG_ALLOW_OUTPUT_SIMPLE(eDVBFrontendParametersTerrestrial);
 
-struct eDVBFrontendParametersATSC
+class eDVBFrontendParametersATSC
 {
+public:
 	enum {
 		Inversion_Off, Inversion_On, Inversion_Unknown
 	};
@@ -202,6 +224,11 @@ public:
 	int getRolloff() const;
 	int getPilot() const;
 	int getSystem() const;
+	int getIsId() const;
+	int getPLSMode() const;
+	int getPLSCode() const;
+	int getT2MIPlpId() const;
+	int getT2MIPid() const;
 	int getBandwidth() const;
 	int getCodeRateLp() const;
 	int getCodeRateHp() const;
@@ -233,6 +260,11 @@ public:
 	int getRolloff() const;
 	int getPilot() const;
 	int getSystem() const;
+	int getIsId() const;
+	int getPLSMode() const;
+	int getPLSCode() const;
+	int getT2MIPlpId() const;
+	int getT2MIPid() const;
 };
 
 class eDVBCableTransponderData : public eDVBTransponderData

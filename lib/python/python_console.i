@@ -42,27 +42,27 @@ eConsolePy_appClosed(eConsolePy *self, void *closure)
 }
 
 static PyGetSetDef eConsolePy_getseters[] = {
-	{"dataAvail",
+	{(char*)"dataAvail",
 	 (getter)eConsolePy_dataAvail, (setter)0,
-	 "dataAvail callback list",
+	 (char*)"dataAvail callback list",
 	 NULL},
-	{"stdoutAvail",
+	{(char*)"stdoutAvail",
 	 (getter)eConsolePy_stdoutAvail, (setter)0,
-	 "stdoutAvail callback list",
+	 (char*)"stdoutAvail callback list",
 	 NULL},
-	{"stderrAvail",
+	{(char*)"stderrAvail",
 	 (getter)eConsolePy_stderrAvail, (setter)0,
-	 "stderrAvail callback list",
+	 (char*)"stderrAvail callback list",
 	 NULL},
-	{"dataSent",
+	{(char*)"dataSent",
 	 (getter)eConsolePy_dataSent, (setter)0,
-	 "dataSent callback list",
+	 (char*)"dataSent callback list",
 	 NULL},
-	{"appClosed",
+	{(char*)"appClosed",
 	 (getter)eConsolePy_appClosed, (setter)0,
-	 "appClosed callback list",
+	 (char*)"appClosed callback list",
 	 NULL},
-	{NULL} /* Sentinel */
+	{} /* Sentinel */
 };
 
 static int
@@ -124,7 +124,7 @@ eConsolePy_dealloc(eConsolePy* self)
 		PyObject_ClearWeakRefs((PyObject *) self);
 	eConsolePy_clear(self);
 	self->cont->Release();
-	self->ob_type->tp_free((PyObject*)self);
+	Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 static PyObject *
@@ -298,86 +298,59 @@ eConsolePy_readFromFile(eConsolePy* self, PyObject *args)
 }
 
 static PyMethodDef eConsolePy_methods[] = {
-	{"setCWD", (PyCFunction)eConsolePy_setCWD, METH_VARARGS,
-	 "set working dir"
+	{(char*)"setCWD", (PyCFunction)eConsolePy_setCWD, METH_VARARGS,
+	 (char*)"set working dir"
 	},
-	{"setBufferSize", (PyCFunction)eConsolePy_setBufferSize, METH_VARARGS,
-	 "set transfer buffer size"
+	{(char*)"setBufferSize", (PyCFunction)eConsolePy_setBufferSize, METH_VARARGS,
+	 (char*)"set transfer buffer size"
 	},
-	{"execute", (PyCFunction)eConsolePy_execute, METH_VARARGS,
-	 "execute command"
+	{(char*)"execute", (PyCFunction)eConsolePy_execute, METH_VARARGS,
+	 (char*)"execute command"
 	},
-	{"dumpToFile", (PyCFunction)eConsolePy_dumpToFile, METH_VARARGS,
-	 "set output file"
+	{(char*)"dumpToFile", (PyCFunction)eConsolePy_dumpToFile, METH_VARARGS,
+	 (char*)"set output file"
 	},
-	{"readFromFile", (PyCFunction)eConsolePy_readFromFile, METH_VARARGS,
-	 "set input file"
+	{(char*)"readFromFile", (PyCFunction)eConsolePy_readFromFile, METH_VARARGS,
+	 (char*)"set input file"
 	},
-	{"getPID", (PyCFunction)eConsolePy_getPID, METH_NOARGS,
-	 "execute command"
+	{(char*)"getPID", (PyCFunction)eConsolePy_getPID, METH_NOARGS,
+	 (char*)"execute command"
 	},
-	{"kill", (PyCFunction)eConsolePy_kill, METH_NOARGS,
-	 "kill application"
+	{(char*)"kill", (PyCFunction)eConsolePy_kill, METH_NOARGS,
+	 (char*)"kill application"
 	},
-	{"sendCtrlC", (PyCFunction)eConsolePy_sendCtrlC, METH_NOARGS,
-	 "send Ctrl-C to application"
+	{(char*)"sendCtrlC", (PyCFunction)eConsolePy_sendCtrlC, METH_NOARGS,
+	 (char*)"send Ctrl-C to application"
 	},
-	{"sendEOF", (PyCFunction)eConsolePy_sendEOF, METH_NOARGS,
-	 "send EOF to application"
+	{(char*)"sendEOF", (PyCFunction)eConsolePy_sendEOF, METH_NOARGS,
+	 (char*)"send EOF to application"
 	},
-	{"write", (PyCFunction)eConsolePy_write, METH_VARARGS,
-	 "write data to application"
+	{(char*)"write", (PyCFunction)eConsolePy_write, METH_VARARGS,
+	 (char*)"write data to application"
 	},
-	{"running", (PyCFunction)eConsolePy_running, METH_NOARGS,
-	 "returns the running state"
+	{(char*)"running", (PyCFunction)eConsolePy_running, METH_NOARGS,
+	 (char*)"returns the running state"
 	},
-	{NULL}  /* Sentinel */
+	{}  /* Sentinel */
 };
 
 static PyTypeObject eConsolePyType = {
-	PyObject_HEAD_INIT(NULL)
-	0, /*ob_size*/
+	PyVarObject_HEAD_INIT(NULL, 0)
 	"eConsoleImpl.eConsoleAppContainer", /*tp_name*/
 	sizeof(eConsolePy), /*tp_basicsize*/
-	0, /*tp_itemsize*/
-	(destructor)eConsolePy_dealloc, /*tp_dealloc*/
-	0, /*tp_print*/
-	0, /*tp_getattr*/
-	0, /*tp_setattr*/
-	0, /*tp_compare*/
-	0, /*tp_repr*/
-	0, /*tp_as_number*/
-	0, /*tp_as_sequence*/
-	0, /*tp_as_mapping*/
-	0, /*tp_hash */
-	0, /*tp_call*/
-	0, /*tp_str*/
-	0, /*tp_getattro*/
-	0, /*tp_setattro*/
-	0, /*tp_as_buffer*/
-	Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, /*tp_flags*/
-	"eConsoleAppContainer objects", /* tp_doc */
-	(traverseproc)eConsolePy_traverse, /* tp_traverse */
-	(inquiry)eConsolePy_clear, /* tp_clear */
-	0, /* tp_richcompare */
-	offsetof(eConsolePy, in_weakreflist), /* tp_weaklistoffset */
-	0, /* tp_iter */
-	0, /* tp_iternext */
-	eConsolePy_methods, /* tp_methods */
-	0, /* tp_members */
-	eConsolePy_getseters, /* tp_getset */
-	0, /* tp_base */
-	0, /* tp_dict */
-	0, /* tp_descr_get */
-	0, /* tp_descr_set */
-	0, /* tp_dictoffset */
-	0, /* tp_init */
-	0, /* tp_alloc */
-	eConsolePy_new, /* tp_new */
+	.tp_dealloc = (destructor)eConsolePy_dealloc,
+	.tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+	.tp_doc = "eConsoleAppContainer objects",
+	.tp_traverse = (traverseproc)eConsolePy_traverse,
+	.tp_clear = (inquiry)eConsolePy_clear,
+	.tp_weaklistoffset = offsetof(eConsolePy, in_weakreflist),
+	.tp_methods = eConsolePy_methods,
+	.tp_getset = eConsolePy_getseters,
+	.tp_new = eConsolePy_new,
 };
 
 static PyMethodDef console_module_methods[] = {
-	{NULL}  /* Sentinel */
+	{}  /* Sentinel */
 };
 
 void eConsoleInit(void)

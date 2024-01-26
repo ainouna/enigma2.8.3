@@ -280,7 +280,7 @@ public:
 		cVPID, cMPEGAPID, cTPID, cPCRPID, cAC3PID,
 		cVTYPE, cACHANNEL, cAC3DELAY, cPCMDELAY,
 		cSUBTITLE, cAACHEAPID=12, cDDPPID, cAACAPID,
-		cDATAPID, cPMTPID, cacheMax
+		cDATAPID, cPMTPID, cDRAAPID, cAC4PID, cacheMax
 	};
 
 	int getCacheEntry(cacheID);
@@ -305,13 +305,16 @@ public:
 		dxNewFound=64,
 		dxIsDedicated3D=128,
 		dxIsParentalProtected=256,
-		dxHideVBI=512,
+		dxIsScrambledPMT=1024,
+		dxCenterDVBSubs=2048,
+		dxNoEIT=4096,
 	};
 
 	bool usePMT() const { return !(m_flags & dxNoDVB); }
 	bool isHidden() const { return (m_flags & dxDontshow || m_flags & dxIsParentalProtected); }
 	bool isDedicated3D() const { return m_flags & dxIsDedicated3D; }
-	bool doHideVBI() const { return m_flags & dxHideVBI; }
+	bool doCenterDVBSubs() const { return m_flags & dxCenterDVBSubs; }
+	bool useEIT() const { return !(m_flags & dxNoEIT); }
 
 	CAID_LIST m_ca;
 
@@ -460,7 +463,7 @@ public:
 	enum { feSatellite, feCable, feTerrestrial, feATSC };
 	enum { stateIdle, stateTuning, stateFailed, stateLock, stateLostLock, stateClosed };
 	enum { toneOff, toneOn };
-	enum { voltageOff, voltage13, voltage18, voltage13_5, voltage18_5 };
+	enum { voltageOff, voltage13, voltage18, voltage13_5, voltage18_5, voltage5_terrestrial };
 };
 
 class iDVBFrontendStatus:  public iDVBFrontend_ENUMS, public iObject
@@ -490,6 +493,11 @@ public:
 	virtual int getRolloff() const = 0;
 	virtual int getPilot() const = 0;
 	virtual int getSystem() const = 0;
+	virtual int getIsId() const = 0;
+	virtual int getPLSMode() const = 0;
+	virtual int getPLSCode() const = 0;
+	virtual int getT2MIPlpId() const = 0;
+	virtual int getT2MIPid() const = 0;
 	virtual int getBandwidth() const = 0;
 	virtual int getCodeRateLp() const = 0;
 	virtual int getCodeRateHp() const = 0;
@@ -510,11 +518,11 @@ public:
 class iDVBFrontend: public iDVBFrontend_ENUMS, public iObject
 {
 public:
-	virtual RESULT tune(const iDVBFrontendParameters &where)=0;
+	virtual RESULT tune(const iDVBFrontendParameters &where, bool blindscan = false)=0;
 	virtual int closeFrontend(bool force = false, bool no_delayed = false)=0;
 	virtual void reopenFrontend()=0;
 #ifndef SWIG
-	virtual RESULT connectStateChange(const Slot1<void,iDVBFrontend*> &stateChange, ePtr<eConnection> &connection)=0;
+	virtual RESULT connectStateChange(const sigc::slot1<void,iDVBFrontend*> &stateChange, ePtr<eConnection> &connection)=0;
 #endif
 	virtual RESULT getState(int &SWIG_OUTPUT)=0;
 	virtual RESULT setTone(int tone)=0;
@@ -533,7 +541,7 @@ public:
 	virtual RESULT getData(int num, long &data)=0;
 	virtual RESULT setData(int num, long val)=0;
 		/* 0 means: not compatible. other values are a priority. */
-	virtual int isCompatibleWith(ePtr<iDVBFrontendParameters> &feparm)=0;
+	virtual int isCompatibleWith(ePtr<iDVBFrontendParameters> &feparm, bool is_configured_sat = false)=0;
 #endif
 	virtual bool setDeliverySystem(const char *type)=0;
 };
@@ -547,6 +555,10 @@ public:
 	virtual void prepareTurnOffSatCR(iDVBFrontend &frontend)=0;
 	virtual int canTune(const eDVBFrontendParametersSatellite &feparm, iDVBFrontend *fe, int frontend_id, int *highest_score_lnb=0)=0;
 	virtual void setRotorMoving(int slotid, bool)=0;
+	virtual RESULT resetAdvancedsatposdependsRoot(int link)=0;
+	virtual bool isOrbitalPositionConfigured(int orbital_position)=0;
+	virtual bool tunerLinkedInUse(int root)=0;
+	virtual void forceUpdateRotorPos(int slot, int orbital_position)=0;
 };
 
 struct eDVBCIRouting
@@ -564,6 +576,7 @@ public:
 	virtual RESULT requestTsidOnid() { return -1; }
 	PSignal2<void, int, int> receivedTsidOnid;
 	virtual int reserveDemux() { return -1; }
+	virtual int getDvrId() { return -1; }
 #ifndef SWIG
 	enum
 	{
@@ -582,8 +595,8 @@ public:
 	{
 		evtPreStart, evtEOF, evtSOF, evtFailed, evtStopped
 	};
-	virtual RESULT connectStateChange(const Slot1<void,iDVBChannel*> &stateChange, ePtr<eConnection> &connection)=0;
-	virtual RESULT connectEvent(const Slot2<void,iDVBChannel*,int> &eventChange, ePtr<eConnection> &connection)=0;
+	virtual RESULT connectStateChange(const sigc::slot1<void,iDVBChannel*> &stateChange, ePtr<eConnection> &connection)=0;
+	virtual RESULT connectEvent(const sigc::slot2<void,iDVBChannel*,int> &eventChange, ePtr<eConnection> &connection)=0;
 
 		/* demux capabilities */
 	enum
@@ -613,7 +626,7 @@ class iTSMPEGDecoder;
 	   everything is specified in pts and not file positions */
 
 	/* implemented in dvb.cpp */
-class eCueSheet: public iObject, public Object
+class eCueSheet: public iObject, public sigc::trackable
 {
 	DECLARE_REF(eCueSheet);
 public:
@@ -634,12 +647,12 @@ public:
 
 			/* backend */
 	enum { evtSeek, evtSkipmode, evtSpanChanged };
-	RESULT connectEvent(const Slot1<void, int> &event, ePtr<eConnection> &connection);
+	RESULT connectEvent(const sigc::slot1<void, int> &event, ePtr<eConnection> &connection);
 
 	std::list<std::pair<pts_t,pts_t> > m_spans;	/* begin, end */
 	std::list<std::pair<int, pts_t> > m_seek_requests; /* relative, delta */
 	pts_t m_skipmode_ratio;
-	Signal1<void,int> m_event;
+	sigc::signal1<void,int> m_event;
 	ePtr<iDVBDemux> m_decoding_demux;
 	ePtr<iTSMPEGDecoder> m_decoder;
 };
@@ -685,6 +698,7 @@ public:
 	virtual RESULT getCAAdapterID(uint8_t &id)=0;
 	virtual RESULT flush()=0;
 	virtual int openDVR(int flags)=0;
+	virtual int getSource()=0;
 };
 
 class iTSMPEGDecoder: public iObject
@@ -735,6 +749,14 @@ public:
 		/** Display any complete data as fast as possible */
 	virtual RESULT setTrickmode()=0;
 
+	virtual RESULT prepareFCC(int fe_id, int vpid, int vtype, int pcrpid)=0;
+
+	virtual RESULT fccDecoderStart()=0;
+
+	virtual RESULT fccDecoderStop()=0;
+
+	virtual RESULT fccUpdatePids(int fe_id, int vpid, int vtype, int pcrpid)=0;
+
 	virtual RESULT getPTS(int what, pts_t &pts) = 0;
 
 	virtual RESULT showSinglePic(const char *filename) = 0;
@@ -746,22 +768,25 @@ public:
 		enum { eventUnknown = 0,
 			eventSizeChanged = VIDEO_EVENT_SIZE_CHANGED,
 			eventFrameRateChanged = VIDEO_EVENT_FRAME_RATE_CHANGED,
-			eventProgressiveChanged = 16
+			eventProgressiveChanged = 16,
+			eventGammaChanged = 17
 		} type;
 		unsigned char aspect;
 		unsigned short height;
 		unsigned short width;
 		bool progressive;
 		unsigned short framerate;
+		unsigned short gamma;
 	};
 
-	virtual RESULT connectVideoEvent(const Slot1<void, struct videoEvent> &event, ePtr<eConnection> &connection) = 0;
+	virtual RESULT connectVideoEvent(const sigc::slot1<void, struct videoEvent> &event, ePtr<eConnection> &connection) = 0;
 
 	virtual int getVideoWidth() = 0;
 	virtual int getVideoHeight() = 0;
 	virtual int getVideoProgressive() = 0;
 	virtual int getVideoFrameRate() = 0;
 	virtual int getVideoAspect() = 0;
+	virtual int getVideoGamma() = 0;
 };
 
 #endif //SWIG

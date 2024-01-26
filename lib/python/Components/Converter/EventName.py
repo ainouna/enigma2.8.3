@@ -1,8 +1,11 @@
 from Components.Converter.Converter import Converter
 from Components.Element import cached
 from Components.Converter.genre import getGenreStringSub
+from Components.config import config
+from Components.UsageConfig import dropEPGNewLines, replaceEPGSeparator
 
-class EventName(Converter, object):
+
+class EventName(Converter):
 	NAME = 0
 	SHORT_DESCRIPTION = 1
 	EXTENDED_DESCRIPTION = 2
@@ -108,14 +111,16 @@ class EventName(Converter, object):
 		elif self.type == self.NAME_NEXT:
 			return pgettext("now/next: 'next' event label", "Next") + ": " + event.getEventName()
 		elif self.type == self.SHORT_DESCRIPTION:
-			return event.getShortDescription()
+			return dropEPGNewLines(event.getShortDescription())
 		elif self.type == self.EXTENDED_DESCRIPTION:
-			return event.getExtendedDescription() or event.getShortDescription()
+			return dropEPGNewLines(event.getExtendedDescription()) or dropEPGNewLines(event.getShortDescription())
 		elif self.type == self.FULL_DESCRIPTION:
-			description = event.getShortDescription()
-			extended = event.getExtendedDescription()
+			description = dropEPGNewLines(event.getShortDescription())
+			extended = dropEPGNewLines(event.getExtendedDescription().rstrip())
 			if description and extended:
-				description += '\n'
+				if description.replace('\n', '') == extended.replace('\n', ''):
+					return extended
+				description += replaceEPGSeparator(config.epg.fulldescription_separator.value)
 			return description + extended
 		elif self.type == self.ID:
 			return str(event.getEventId())
@@ -134,18 +139,18 @@ class EventName(Converter, object):
 			if event.getPdcPil():
 				running_status = event.getRunningStatus()
 				if running_status == 1:
-					return "not running"
+					return _("not running")
 				if running_status == 2:
-					return "starts in a few seconds"
+					return _("starts in a few seconds")
 				if running_status == 3:
-					return "pausing"
+					return _("pausing")
 				if running_status == 4:
-					return "running"
+					return _("running")
 				if running_status == 5:
-					return "service off-air"
-				if running_status in (6,7):
-					return "reserved for future use"
-				return "undefined"
+					return _("service off-air")
+				if running_status in (6, 7):
+					return _("reserved for future use")
+				return _("undefined")
 			return ""
 
 	text = property(getText)

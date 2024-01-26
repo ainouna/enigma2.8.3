@@ -401,15 +401,18 @@ void gPainter::clear()
 	m_rc->submit(o);
 }
 
-void gPainter::blit(gPixmap *pixmap, ePoint pos, const eRect &clip, int flags)
+void gPainter::blitScale(gPixmap *pixmap, const eRect &pos, const eRect &clip, int flags, int aflags)
 {
-	blitScale(pixmap, eRect(pos, eSize()), clip, flags, 0);
+	blit(pixmap, pos, clip, flags | aflags);
 }
 
-void gPainter::blitScale(gPixmap *pixmap, const eRect &position, const eRect &clip, int flags, int aflags)
+void gPainter::blit(gPixmap *pixmap, ePoint pos, const eRect &clip, int flags)
 {
-	flags |= aflags;
+	blit(pixmap, eRect(pos, eSize()), clip, flags);
+}
 
+void gPainter::blit(gPixmap *pixmap, const eRect &pos, const eRect &clip, int flags)
+{
 	if ( m_dc->islocked() )
 		return;
 	gOpcode o;
@@ -423,13 +426,15 @@ void gPainter::blitScale(gPixmap *pixmap, const eRect &position, const eRect &cl
 	o.parm.blit->pixmap = pixmap;
 	o.parm.blit->clip = clip;
 	o.parm.blit->flags = flags;
-	o.parm.blit->position = position;
+	o.parm.blit->position = pos;
 	m_rc->submit(o);
 }
 
 void gPainter::setPalette(gRGB *colors, int start, int len)
 {
 	if ( m_dc->islocked() )
+		return;
+	if (len <= 0)
 		return;
 	ASSERT(colors);
 	gOpcode o;
@@ -438,9 +443,9 @@ void gPainter::setPalette(gRGB *colors, int start, int len)
 	gPalette *p=new gPalette;
 
 	o.parm.setPalette = new gOpcode::para::psetPalette;
-	p->data=new gRGB[len];
+	p->data=new gRGB[static_cast<size_t>(len)];
 
-	memcpy(p->data, colors, len*sizeof(gRGB));
+	memcpy(static_cast<void*>(p->data), colors, len*sizeof(gRGB));
 	p->start=start;
 	p->colors=len;
 	o.parm.setPalette->palette = p;
@@ -768,7 +773,7 @@ void gDC::exec(const gOpcode *o)
 		if (o->parm.setPalette->palette->colors > (m_pixmap->surface->clut.colors-o->parm.setPalette->palette->start))
 			o->parm.setPalette->palette->colors = m_pixmap->surface->clut.colors-o->parm.setPalette->palette->start;
 		if (o->parm.setPalette->palette->colors)
-			memcpy(m_pixmap->surface->clut.data+o->parm.setPalette->palette->start, o->parm.setPalette->palette->data, o->parm.setPalette->palette->colors*sizeof(gRGB));
+			memcpy(static_cast<void*>(m_pixmap->surface->clut.data+o->parm.setPalette->palette->start), o->parm.setPalette->palette->data, o->parm.setPalette->palette->colors*sizeof(gRGB));
 
 		delete[] o->parm.setPalette->palette->data;
 		delete o->parm.setPalette->palette;

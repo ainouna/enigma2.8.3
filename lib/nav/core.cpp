@@ -1,6 +1,7 @@
 #include <lib/nav/core.h>
 #include <lib/base/eerror.h>
 #include <lib/python/python.h>
+#include <lib/dvb/fcc.h>
 
 eNavigation* eNavigation::instance;
 
@@ -26,26 +27,31 @@ void eNavigation::recordEvent(iRecordableService* service, int event)
 
 RESULT eNavigation::playService(const eServiceReference &service)
 {
-	stopService();
+	RESULT res = -1;
 
-	ASSERT(m_servicehandler);
-	RESULT res = m_servicehandler->play(service, m_runningService);
+	if (! m_fccmgr || m_fccmgr->tryFCCService(service, m_runningService) == -1)
+	{
+		stopService();
+		ASSERT(m_servicehandler);
+		res = m_servicehandler->play(service, m_runningService);
+	}
+
 	if (m_runningService)
 	{
 		m_runningService->setTarget(m_decoder);
-		m_runningService->connectEvent(slot(*this, &eNavigation::serviceEvent), m_service_event_conn);
+		m_runningService->connectEvent(sigc::mem_fun(*this, &eNavigation::serviceEvent), m_service_event_conn);
 		res = m_runningService->start();
 	}
 	return res;
 }
 
-RESULT eNavigation::connectEvent(const Slot1<void,int> &event, ePtr<eConnection> &connection)
+RESULT eNavigation::connectEvent(const sigc::slot1<void,int> &event, ePtr<eConnection> &connection)
 {
 	connection = new eConnection(this, m_event.connect(event));
 	return 0;
 }
 
-RESULT eNavigation::connectRecordEvent(const Slot2<void,ePtr<iRecordableService>,int> &event, ePtr<eConnection> &connection)
+RESULT eNavigation::connectRecordEvent(const sigc::slot2<void,ePtr<iRecordableService>,int> &event, ePtr<eConnection> &connection)
 {
 	connection = new eConnection(this, m_record_event.connect(event));
 	return 0;
@@ -72,6 +78,8 @@ RESULT eNavigation::stopService(void)
 
 		/* kill service. */
 	m_service_event_conn = 0;
+
+	m_fccmgr && m_fccmgr->cleanupFCCService();
 	return 0;
 }
 
@@ -91,7 +99,7 @@ RESULT eNavigation::recordService(const eServiceReference &ref, ePtr<iRecordable
 		else
 		{
 			ePtr<eConnection> conn;
-			service->connectEvent(slot(*this, &eNavigation::recordEvent), conn);
+			service->connectEvent(sigc::mem_fun(*this, &eNavigation::recordEvent), conn);
 			m_recordings[service]=conn;
 			m_recordings_services[service]=ref;
 		}
@@ -160,6 +168,8 @@ eNavigation::eNavigation(iServiceHandler *serviceHandler, int decoder)
 	ASSERT(serviceHandler);
 	m_servicehandler = serviceHandler;
 	m_decoder = decoder;
+	if (decoder == 0 )
+		m_fccmgr = new eFCCServiceManager(this);
 	instance = this;
 }
 

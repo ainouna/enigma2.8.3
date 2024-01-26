@@ -12,6 +12,7 @@ public:
 	~eListboxPythonStringContent();
 
 	void setList(SWIG_PYOBJECT(ePyObject) list);
+	void setItemHeight(int height);
 	PyObject *getCurrentSelection();
 	int getCurrentSelectionIndex() { return m_cursor; }
 	void invalidateEntry(int index);
@@ -31,7 +32,7 @@ protected:
 	void cursorRestore();
 	int size();
 
-	RESULT connectItemChanged(const Slot0<void> &itemChanged, ePtr<eConnection> &connection);
+	RESULT connectItemChanged(const sigc::slot0<void> &itemChanged, ePtr<eConnection> &connection);
 
 	// void setOutputDevice ? (for allocating colors, ...) .. requires some work, though
 	void setSize(const eSize &size);
@@ -56,8 +57,9 @@ public:
 	void paint(gPainter &painter, eWindowStyle &style, const ePoint &offset, int selected);
 	void setSeperation(int sep) { m_seperation = sep; }
 	int currentCursorSelectable();
+	void setSlider(int height, int space) { m_slider_height = height; m_slider_space = space; }
 private:
-	int m_seperation;
+	int m_seperation, m_slider_height, m_slider_space;
 };
 
 class eListboxPythonMultiContent: public eListboxPythonStringContent
@@ -80,6 +82,7 @@ public:
 	void setItemHeight(int height);
 	void setSelectionClip(eRect &rect, bool update=false);
 	void updateClip(gRegion &);
+	void resetClip();
 	void entryRemoved(int idx);
 	void setTemplate(SWIG_PYOBJECT(ePyObject) tmplate);
 private:
@@ -100,6 +103,15 @@ private:
 #define BT_ALPHABLEND 2
 #define BT_SCALE 4
 #define BT_KEEP_ASPECT_RATIO 8
+#define BT_FIXRATIO 8
+#define BT_HALIGN_LEFT 0
+#define BT_HALIGN_CENTER 16
+#define BT_HALIGN_RIGHT 32
+#define BT_VALIGN_TOP 0
+#define BT_VALIGN_CENTER 64
+#define BT_VALIGN_BOTTOM 128
+#define BT_ALIGN_CENTER BT_HALIGN_CENTER | BT_VALIGN_CENTER
+
 #endif // SWIG
 
 #endif

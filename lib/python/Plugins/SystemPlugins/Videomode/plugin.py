@@ -8,25 +8,25 @@ from Components.Sources.StaticText import StaticText
 
 from VideoHardware import video_hw
 
-config.misc.videowizardenabled = ConfigBoolean(default = True)
+config.misc.videowizardenabled = ConfigBoolean(default=True)
 
-class VideoSetup(Screen, ConfigListScreen):
+
+class VideoSetup(ConfigListScreen, Screen):
 
 	def __init__(self, session, hw):
 		Screen.__init__(self, session)
 		# for the skin: first try VideoSetup, then Setup, this allows individual skinning
-		self.skinName = ["VideoSetup", "Setup" ]
-		self.setup_title = _("A/V settings")
-		self.setTitle(self.setup_title)
+		self.skinName = ["VideoSetup", "Setup"]
+		self.setTitle(_("A/V settings"))
 		self.hw = hw
-		self.onChangedEntry = [ ]
+		self.onChangedEntry = []
 
 		# handle hotplug by re-creating setup
 		self.onShow.append(self.startHotplug)
 		self.onHide.append(self.stopHotplug)
 
-		self.list = [ ]
-		ConfigListScreen.__init__(self, self.list, session = session, on_change = self.changedEntry)
+		self.list = []
+		ConfigListScreen.__init__(self, self.list, session=session, on_change=self.createSetup)
 
 		from Components.ActionMap import ActionMap
 		self["actions"] = ActionMap(["SetupActions", "MenuActions"],
@@ -42,10 +42,6 @@ class VideoSetup(Screen, ConfigListScreen):
 
 		self.createSetup()
 		self.grabLastGoodMode()
-		self.onLayoutFinish.append(self.layoutFinished)
-
-	def layoutFinished(self):
-		self.setTitle(self.setup_title)
 
 	def startHotplug(self):
 		self.hw.on_hotplug.append(self.createSetup)
@@ -89,8 +85,27 @@ class VideoSetup(Screen, ConfigListScreen):
 		elif config.av.aspect.value == "4_3":
 			self.list.append(getConfigListEntry(_("Display 16:9 content as"), config.av.policy_169, _("When the content has an aspect ratio of 16:9, choose whether to scale/stretch the picture.")))
 
-#		if config.av.videoport.value == "DVI":
-#			self.list.append(getConfigListEntry(_("Allow Unsupported Modes"), config.av.edid_override))
+		if config.av.videoport.value == "DVI":
+			if level >= 1:
+				self.list.append(getConfigListEntry(_("Allow unsupported modes"), config.av.edid_override, _("When selected this allows video modes to be selected even if they are not reported as supported.")))
+				if SystemInfo["HasBypassEdidChecking"]:
+					self.list.append(getConfigListEntry(_("Bypass HDMI EDID checking"), config.av.bypassEdidChecking, _("Configure if the HDMI EDID checking should be bypassed as this might solve issue with some TVs.")))
+				if SystemInfo["HasColorspace"]:
+					self.list.append(getConfigListEntry(_("HDMI Colorspace"), config.av.hdmicolorspace, _("This option allows you to configure the Colorspace from Auto to RGB")))
+				if SystemInfo["HasColordepth"]:
+					self.list.append(getConfigListEntry(_("HDMI Colordepth"), config.av.hdmicolordepth, _("This option allows you to configure the Colordepth for UHD")))
+				if SystemInfo["HasColorimetry"]:
+					self.list.append(getConfigListEntry(_("HDMI Colorimetry"), config.av.hdmicolorimetry, _("This option allows you to configure the Colorimetry for HDR.")))
+				if SystemInfo["HasHdrType"]:
+					self.list.append(getConfigListEntry(_("HDMI HDR Type"), config.av.hdmihdrtype, _("This option allows you to configure the HDR type.")))
+				if SystemInfo["HasHDMIpreemphasis"]:
+					self.list.append(getConfigListEntry(_("Use HDMI pre-emphasis"), config.av.hdmipreemphasis, _("This option can be useful for long HDMI cables.")))
+				if SystemInfo["HDRSupport"]:
+					self.list.append(getConfigListEntry(_("HLG support"), config.av.hlg_support, _("This option allows you to force the HLG modes for UHD")))
+					self.list.append(getConfigListEntry(_("HDR10 support"), config.av.hdr10_support, _("This option allows you to force the HDR10 modes for UHD")))
+					self.list.append(getConfigListEntry(_("Allow 12bit"), config.av.allow_12bit, _("This option allows you to enable or disable the 12 bit color mode")))
+					self.list.append(getConfigListEntry(_("Allow 10bit"), config.av.allow_10bit, _("This option allows you to enable or disable the 10 bit color mode")))
+
 		if config.av.videoport.value == "Scart":
 			self.list.append(getConfigListEntry(_("Color format"), config.av.colorformat, _("Configure which color format should be used on the SCART output.")))
 			if level >= 1:
@@ -106,14 +121,28 @@ class VideoSetup(Screen, ConfigListScreen):
 				self.list.append(getConfigListEntry(_("DTS downmix"), config.av.downmix_dts, _("Configure whether multi channel sound tracks should be downmixed to stereo.")))
 			if SystemInfo["CanDownmixAAC"]:
 				self.list.append(getConfigListEntry(_("AAC downmix"), config.av.downmix_aac, _("Configure whether multi channel sound tracks should be downmixed to stereo.")))
+			if SystemInfo["CanDownmixAACPlus"]:
+				self.list.append(getConfigListEntry(_("AAC+ downmix"), config.av.downmix_aacplus, _("Choose whether multi channel aac+ sound tracks should be downmixed to stereo.")))
+			if SystemInfo["CanAC3Transcode"]:
+				self.list.append(getConfigListEntry(_("AC3 transcoding"), config.av.transcodeac3plus, _("Choose whether AC3 sound tracks should be transcoded.")))
+			if SystemInfo["CanAACTranscode"]:
+				self.list.append(getConfigListEntry(_("AAC transcoding"), config.av.transcodeaac, _("Choose whether AAC sound tracks should be transcoded.")))
+			if SystemInfo["CanDTSHD"]:
+				self.list.append(getConfigListEntry(_("DTS-HD(HR/MA) downmix"), config.av.dtshd, _("Choose whether multi channel DTS-HD(HR/MA) sound tracks should be downmixed or transcoded.")))
+			if SystemInfo["CanWMAPRO"]:
+				self.list.append(getConfigListEntry(_("WMA Pro downmix"), config.av.wmapro, _("Choose whether WMA Pro sound tracks should be downmixed.")))
+			if SystemInfo["HasMultichannelPCM"]:
+				self.list.append(getConfigListEntry(_("Multichannel PCM"), config.av.multichannel_pcm, _("Configure whether multi channel PCM sound should be enabled.")))
 			self.list.extend((
 				getConfigListEntry(_("General AC3 delay"), config.av.generalAC3delay, _("Configure the general audio delay of Dolby Digital sound tracks.")),
 				getConfigListEntry(_("General PCM delay"), config.av.generalPCMdelay, _("Configure the general audio delay of stereo sound tracks."))
 			))
-			if SystemInfo["HasMultichannelPCM"]:
-				self.list.append(getConfigListEntry(_("Multichannel PCM"), config.av.multichannel_pcm, _("Configure whether multi channel PCM sound should be enabled.")))
+			if SystemInfo["CanBTAudio"]:
+				self.list.append(getConfigListEntry(_("Enable bluetooth audio"), config.av.btaudio, _("This option allows you to switch audio to bluetooth speakers.")))
+			if SystemInfo["CanBTAudioDelay"]:
+				self.list.append(getConfigListEntry(_("General bluetooth audio delay"), config.av.btaudiodelay, _("This option configures the general audio delay for bluetooth speakers.")))
 			if SystemInfo["HasAutoVolume"] or SystemInfo["HasAutoVolumeLevel"]:
-				self.list.append(getConfigListEntry(_("Audio auto volume level"), SystemInfo["HasAutoVolume"] and config.av.autovolume or config.av.autovolumelevel, _("This option configures you can set auto volume level.")))
+				self.list.append(getConfigListEntry(_("Audio auto volume level"), SystemInfo["HasAutoVolume"] and config.av.autovolume or config.av.autovolumelevel, _("This option allows you can to set the auto volume level.")))
 			if SystemInfo["Has3DSurround"]:
 				self.list.append(getConfigListEntry(_("3D surround"), config.av.surround_3d, _("This option allows you to enable 3D surround sound.")))
 				if SystemInfo["Has3DSpeaker"] and config.av.surround_3d.value != "none":
@@ -128,19 +157,8 @@ class VideoSetup(Screen, ConfigListScreen):
 
 		if not isinstance(config.av.scaler_sharpness, ConfigNothing):
 			self.list.append(getConfigListEntry(_("Scaler sharpness"), config.av.scaler_sharpness, _("Configure the sharpness of the video scaling.")))
-		if SystemInfo["HasBypassEdidChecking"]:
-			self.list.append(getConfigListEntry(_("Bypass HDMI EDID checking"), config.av.bypassEdidChecking, _("Configure if the HDMI EDID checking should be bypassed as this might solve issue with some TVs.")))
-		if SystemInfo["HasColorspace"]:
-			self.list.append(getConfigListEntry(_("HDMI Colorspace"), config.av.hdmicolorspace, _("This option allows you can config the Colorspace from Auto to RGB")))
-		if SystemInfo["HasColordepth"]:
-			self.list.append(getConfigListEntry(_("HDMI Colordepth"), config.av.hdmicolordepth, _("This option allows you can config the Colordepth for UHD")))
-		if SystemInfo["HasColorimetry"]:
-			self.list.append(getConfigListEntry(_("HDMI Colorimetry"), config.av.hdmicolorimetry, _("This option allows you can config the Colorimetry for HDR.")))
-		if SystemInfo["HasHDMIpreemphasis"]:
-			self.list.append(getConfigListEntry(_("Use HDMI pre-emphasis"), config.av.hdmipreemphasis, _("This option can be useful for long HDMI cables.")))
 
 		self["config"].list = self.list
-		self["config"].l.setList(self.list)
 
 	def keyLeft(self):
 		ConfigListScreen.keyLeft(self)
@@ -172,27 +190,10 @@ class VideoSetup(Screen, ConfigListScreen):
 		if (port, mode, rate) != self.last_good:
 			self.hw.setMode(port, mode, rate)
 			from Screens.MessageBox import MessageBox
-			self.session.openWithCallback(self.confirm, MessageBox, _("Is this video mode ok?"), MessageBox.TYPE_YESNO, timeout = 20, default = False)
+			self.session.openWithCallback(self.confirm, MessageBox, _("Is this video mode ok?"), MessageBox.TYPE_YESNO, timeout=20, default=False)
 		else:
 			self.keySave()
 
-	# for summary:
-	def changedEntry(self):
-		for x in self.onChangedEntry:
-			x()
-
-	def getCurrentEntry(self):
-		return self["config"].getCurrent()[0]
-
-	def getCurrentValue(self):
-		return str(self["config"].getCurrent()[1].getText())
-
-	def getCurrentDescription(self):
-		return self["config"].getCurrent() and len(self["config"].getCurrent()) > 2 and self["config"].getCurrent()[2] or ""
-
-	def createSummary(self):
-		from Screens.Setup import SetupSummary
-		return SetupSummary
 
 class VideomodeHotplug:
 	def __init__(self, hw):
@@ -221,19 +222,22 @@ class VideomodeHotplug:
 			print "setting %s/%s/%s" % (port, mode, rate)
 			self.hw.setMode(port, mode, rate)
 
+
 hotplug = None
+
 
 def startHotplug():
 	global hotplug, video_hw
 	hotplug = VideomodeHotplug(video_hw)
 	hotplug.start()
 
+
 def stopHotplug():
 	global hotplug
 	hotplug.stop()
 
 
-def autostart(reason, session = None, **kwargs):
+def autostart(reason, session=None, **kwargs):
 	if session is not None:
 		global my_global_session
 		my_global_session = session
@@ -244,24 +248,28 @@ def autostart(reason, session = None, **kwargs):
 	elif reason == 1:
 		stopHotplug()
 
+
 def videoSetupMain(session, **kwargs):
 	session.open(VideoSetup, video_hw)
 
+
 def startSetup(menuid):
-	if menuid != "system":
-		return [ ]
+	if menuid != "video":
+		return []
 
 	return [(_("A/V settings"), videoSetupMain, "av_setup", 40)]
+
 
 def VideoWizard(*args, **kwargs):
 	from VideoWizard import VideoWizard
 	return VideoWizard(*args, **kwargs)
 
+
 def Plugins(**kwargs):
 	list = [
 #		PluginDescriptor(where = [PluginDescriptor.WHERE_SESSIONSTART, PluginDescriptor.WHERE_AUTOSTART], fnc = autostart),
-		PluginDescriptor(name=_("Video setup"), description=_("Advanced video setup"), where = PluginDescriptor.WHERE_MENU, needsRestart = False, fnc=startSetup)
+		PluginDescriptor(name=_("Video setup"), description=_("Advanced video setup"), where=PluginDescriptor.WHERE_MENU, needsRestart=False, fnc=startSetup)
 	]
 	if config.misc.videowizardenabled.value:
-		list.append(PluginDescriptor(name=_("Video wizard"), where = PluginDescriptor.WHERE_WIZARD, needsRestart = False, fnc=(20, VideoWizard)))
+		list.append(PluginDescriptor(name=_("Video wizard"), where=PluginDescriptor.WHERE_WIZARD, needsRestart=False, fnc=(20, VideoWizard)))
 	return list

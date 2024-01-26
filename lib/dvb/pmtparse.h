@@ -8,8 +8,9 @@
 #include <dvbsi++/program_map_section.h>
 #include <dvbsi++/program_association_section.h>
 #include <dvbsi++/application_information_section.h>
+#include <dvbsi++/ca_descriptor.h>
 
-class eDVBPMTParser: public Object
+class eDVBPMTParser: public sigc::trackable
 {
 protected:
 	eAUTable<eTable<ProgramMapSection> > m_PMT;
@@ -23,7 +24,7 @@ public:
 	{
 		int pid;
 		int component_tag;
-		enum { vtMPEG2, vtMPEG4_H264, vtMPEG1, vtMPEG4_Part2, vtVC1, vtVC1_SM, vtH265_HEVC, vtCAVS };
+		enum { vtMPEG2, vtMPEG4_H264, vtVC1 = 3, vtMPEG4_Part2, vtVC1_SM, vtMPEG1, vtH265_HEVC, vtCAVS = 16, vtAVS2 = 40 };
 		int type;
 	};
 
@@ -31,7 +32,7 @@ public:
 	{
 		int pid,
 		rdsPid; // hack for some radio services which transmit radiotext on different pid (i.e. harmony fm, HIT RADIO FFH, ...)
-		enum { atMPEG, atAC3, atDTS, atAAC, atAACHE, atLPCM, atDTSHD, atDDP };
+		enum { atMPEG, atAC3, atDTS, atAAC, atAACHE, atLPCM, atDTSHD, atDDP, atDRA, atAC4 };
 		int type; // mpeg2, ac3, dts, ...
 
 		int component_tag;
@@ -72,6 +73,7 @@ public:
 		{
 			uint16_t caid;
 			int capid;
+			std::string databytes;
 			bool operator< (const struct capid_pair &t) const { return t.caid < caid; }
 		};
 		std::vector<videoStream> videoStreams;
@@ -88,6 +90,8 @@ public:
 		int serviceId;
 		int adapterId;
 		int demuxId;
+		int pmtVersion;
+		bool isCached;
 		bool isCrypted() { return !caids.empty(); }
 	};
 
@@ -96,10 +100,11 @@ public:
 		DECLARE_REF(eStreamData);
 		std::vector<int> caIds;
 		std::vector<int> ecmPids;
+		std::vector<std::string> ecmDataBytes;
 		std::vector<int> videoStreams;
 		std::vector<int> audioStreams;
 		std::vector<int> subtitleStreams;
-		int pcrPid, pmtPid, textPid, aitPid, serviceId, adapterId, demuxId;
+		int pcrPid, pmtPid, textPid, aitPid, defaultAudioPid, serviceId, adapterId, demuxId;
 	public:
 		eStreamData(struct program &program);
 		RESULT getAllPids(std::vector<int> &result) const;
@@ -114,9 +119,11 @@ public:
 		RESULT getServiceId(int &result) const;
 		RESULT getAdapterId(int &result) const;
 		RESULT getDemuxId(int &result) const;
-		RESULT getCaIds(std::vector<int> &caids, std::vector<int> &ecmpids) const;
+		RESULT getCaIds(std::vector<int> &caids, std::vector<int> &ecmpids, std::vector<std::string> &ecmdatabytes) const;
+		RESULT getDefaultAudioPid(int &result) const;
 	};
 
+	void processCaDescriptor(program &program, CaDescriptor *desc);
 	virtual int getProgramInfo(program &program);
 	void clearProgramInfo(program &program);
 };

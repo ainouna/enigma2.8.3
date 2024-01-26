@@ -3,22 +3,24 @@ from SystemInfo import SystemInfo
 from fcntl import ioctl
 import os
 import struct
+import platform
 
-# asm-generic/ioctl.h
+# include/uapi/asm-generic/ioctl.h
 IOC_NRBITS = 8L
 IOC_TYPEBITS = 8L
-IOC_SIZEBITS = 13L
-IOC_DIRBITS = 3L
+IOC_SIZEBITS = 13L if "mips" in platform.machine() else 14L
+IOC_DIRBITS = 3L if "mips" in platform.machine() else 2L
 
 IOC_NRSHIFT = 0L
-IOC_TYPESHIFT = IOC_NRSHIFT+IOC_NRBITS
-IOC_SIZESHIFT = IOC_TYPESHIFT+IOC_TYPEBITS
-IOC_DIRSHIFT = IOC_SIZESHIFT+IOC_SIZEBITS
+IOC_TYPESHIFT = IOC_NRSHIFT + IOC_NRBITS
+IOC_SIZESHIFT = IOC_TYPESHIFT + IOC_TYPEBITS
+IOC_DIRSHIFT = IOC_SIZESHIFT + IOC_SIZEBITS
 
 IOC_READ = 2L
 
+
 def EVIOCGNAME(length):
-	return (IOC_READ<<IOC_DIRSHIFT)|(length<<IOC_SIZESHIFT)|(0x45<<IOC_TYPESHIFT)|(0x06<<IOC_NRSHIFT)
+	return (IOC_READ << IOC_DIRSHIFT) | (length << IOC_SIZESHIFT) | (0x45 << IOC_TYPESHIFT) | (0x06 << IOC_NRSHIFT)
 
 
 class inputDevices:
@@ -29,32 +31,31 @@ class inputDevices:
 		self.getInputDevices()
 
 	def getInputDevices(self):
-		devices = os.listdir("/dev/input/")
+		devices = sorted(os.listdir("/dev/input/"))
 
 		for evdev in devices:
 			try:
-				buffer = "\0"*512
+				buffer = "\0" * 512
 				self.fd = os.open("/dev/input/" + evdev, os.O_RDWR | os.O_NONBLOCK)
 				self.name = ioctl(self.fd, EVIOCGNAME(256), buffer)
 				self.name = self.name[:self.name.find("\0")]
 				os.close(self.fd)
-			except (IOError,OSError), err:
-				print '[iInputDevices] getInputDevices ' + evdev + ' <ERROR: ioctl(EVIOCGNAME): ' + str(err) + ' >'
+			except (IOError, OSError), err:
+				print "[InputDevice] getInputDevices " + evdev + " <ERROR: ioctl(EVIOCGNAME): " + str(err) + " >"
 				self.name = None
 
 			if self.name:
-				self.Devices[evdev] = {'name': self.name, 'type': self.getInputDeviceType(self.name),'enabled': False, 'configuredName': None }
+				self.Devices[evdev] = {'name': self.name, 'type': self.getInputDeviceType(self.name), 'enabled': False, 'configuredName': None}
 
-
-	def getInputDeviceType(self,name):
-		if "remote control" in name:
+	def getInputDeviceType(self, name):
+		if "remote control" in str(name).lower():
 			return "remote"
-		elif "keyboard" in name:
+		elif "keyboard" in str(name).lower():
 			return "keyboard"
-		elif "mouse" in name:
+		elif "mouse" in str(name).lower():
 			return "mouse"
 		else:
-			print "Unknown device type:",name
+			print "[InputDevice] Unknown device type:", name
 			return None
 
 	def getDeviceName(self, x):
@@ -67,7 +68,7 @@ class inputDevices:
 		return sorted(self.Devices.iterkeys())
 
 	def setDeviceAttribute(self, device, attribute, value):
-		#print "[iInputDevices] setting for device", device, "attribute", attribute, " to value", value
+		#print "[InputDevice] setting for device", device, "attribute", attribute, " to value", value
 		if device in self.Devices:
 			self.Devices[device][attribute] = value
 
@@ -79,13 +80,13 @@ class inputDevices:
 
 	def setEnabled(self, device, value):
 		oldval = self.getDeviceAttribute(device, 'enabled')
-		#print "[iInputDevices] setEnabled for device %s to %s from %s" % (device,value,oldval)
+		#print "[InputDevice] setEnabled for device %s to %s from %s" % (device,value,oldval)
 		self.setDeviceAttribute(device, 'enabled', value)
 		if oldval is True and value is False:
 			self.setDefaults(device)
 
 	def setName(self, device, value):
-		#print "[iInputDevices] setName for device %s to %s" % (device,value)
+		#print "[InputDevice] setName for device %s to %s" % (device,value)
 		self.setDeviceAttribute(device, 'configuredName', value)
 
 	#struct input_event {
@@ -96,10 +97,10 @@ class inputDevices:
 	#}; -> size = 16
 
 	def setDefaults(self, device):
-		print "[iInputDevices] setDefaults for device %s" % device
+		print "[InputDevice] setDefaults for device %s" % device
 		self.setDeviceAttribute(device, 'configuredName', None)
-		event_repeat = struct.pack('iihhi', 0, 0, 0x14, 0x01, 100)
-		event_delay = struct.pack('iihhi', 0, 0, 0x14, 0x00, 700)
+		event_repeat = struct.pack('LLHHi', 0, 0, 0x14, 0x01, 100)
+		event_delay = struct.pack('LLHHi', 0, 0, 0x14, 0x00, 700)
 		fd = os.open("/dev/input/" + device, os.O_RDWR)
 		os.write(fd, event_repeat)
 		os.write(fd, event_delay)
@@ -107,16 +108,16 @@ class inputDevices:
 
 	def setRepeat(self, device, value): #REP_PERIOD
 		if self.getDeviceAttribute(device, 'enabled'):
-			print "[iInputDevices] setRepeat for device %s to %d ms" % (device,value)
-			event = struct.pack('iihhi', 0, 0, 0x14, 0x01, int(value))
+			print "[InputDevice] setRepeat for device %s to %d ms" % (device, value)
+			event = struct.pack('LLHHi', 0, 0, 0x14, 0x01, int(value))
 			fd = os.open("/dev/input/" + device, os.O_RDWR)
 			os.write(fd, event)
 			os.close(fd)
 
 	def setDelay(self, device, value): #REP_DELAY
 		if self.getDeviceAttribute(device, 'enabled'):
-			print "[iInputDevices] setDelay for device %s to %d ms" % (device,value)
-			event = struct.pack('iihhi', 0, 0, 0x14, 0x00, int(value))
+			print "[InputDevice] setDelay for device %s to %d ms" % (device, value)
+			event = struct.pack('LLHHi', 0, 0, 0x14, 0x00, int(value))
 			fd = os.open("/dev/input/" + device, os.O_RDWR)
 			os.write(fd, event)
 			os.close(fd)
@@ -132,17 +133,17 @@ class InitInputDevices:
 		config.inputDevices = ConfigSubsection()
 		for device in sorted(iInputDevices.Devices.iterkeys()):
 			self.currentDevice = device
-			#print "[InitInputDevices] -> creating config entry for device: %s -> %s  " % (self.currentDevice, iInputDevices.Devices[device]["name"])
+			#print "[InputDevice] creating config entry for device: %s -> %s  " % (self.currentDevice, iInputDevices.Devices[device]["name"])
 			self.setupConfigEntries(self.currentDevice)
 			self.currentDevice = ""
 
-	def inputDevicesEnabledChanged(self,configElement):
+	def inputDevicesEnabledChanged(self, configElement):
 		if self.currentDevice != "" and iInputDevices.currentDevice == "":
 			iInputDevices.setEnabled(self.currentDevice, configElement.value)
 		elif iInputDevices.currentDevice != "":
 			iInputDevices.setEnabled(iInputDevices.currentDevice, configElement.value)
 
-	def inputDevicesNameChanged(self,configElement):
+	def inputDevicesNameChanged(self, configElement):
 		if self.currentDevice != "" and iInputDevices.currentDevice == "":
 			iInputDevices.setName(self.currentDevice, configElement.value)
 			if configElement.value != "":
@@ -155,19 +156,19 @@ class InitInputDevices:
 		elif iInputDevices.currentDevice != "":
 			iInputDevices.setName(iInputDevices.currentDevice, configElement.value)
 
-	def inputDevicesRepeatChanged(self,configElement):
+	def inputDevicesRepeatChanged(self, configElement):
 		if self.currentDevice != "" and iInputDevices.currentDevice == "":
 			iInputDevices.setRepeat(self.currentDevice, configElement.value)
 		elif iInputDevices.currentDevice != "":
 			iInputDevices.setRepeat(iInputDevices.currentDevice, configElement.value)
 
-	def inputDevicesDelayChanged(self,configElement):
+	def inputDevicesDelayChanged(self, configElement):
 		if self.currentDevice != "" and iInputDevices.currentDevice == "":
 			iInputDevices.setDelay(self.currentDevice, configElement.value)
 		elif iInputDevices.currentDevice != "":
 			iInputDevices.setDelay(iInputDevices.currentDevice, configElement.value)
 
-	def setupConfigEntries(self,device):
+	def setupConfigEntries(self, device):
 		cmd = "config.inputDevices." + device + " = ConfigSubsection()"
 		exec cmd
 		cmd = "config.inputDevices." + device + ".enabled = ConfigYesNo(default = False)"
@@ -192,7 +193,8 @@ iInputDevices = inputDevices()
 
 
 config.plugins.remotecontroltype = ConfigSubsection()
-config.plugins.remotecontroltype.rctype = ConfigInteger(default = 0)
+config.plugins.remotecontroltype.rctype = ConfigInteger(default=0)
+
 
 class RcTypeControl():
 	def __init__(self):
@@ -219,5 +221,6 @@ class RcTypeControl():
 		if self.isSupported:
 			rc = open('/proc/stb/ir/rc/type', 'r').read().strip()
 		return int(rc)
+
 
 iRcTypeControl = RcTypeControl()

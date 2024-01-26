@@ -101,6 +101,16 @@ void transponderDataToDict(ePyObject &dest, ePtr<iDVBTransponderData> data)
 		if (value >= 0) PutToDict(dest, "pilot", value);
 		value = data->getSystem();
 		if (value >= 0) PutToDict(dest, "system", value);
+		value = data->getIsId();
+		if (value >= -1) PutToDict(dest, "is_id", value);
+		value = data->getPLSMode();
+		if (value >= 0) PutToDict(dest, "pls_mode", value);
+		value = data->getPLSCode();
+		if (value >= 0) PutToDict(dest, "pls_code", value);
+		value = data->getT2MIPlpId();
+		if (value >= -1) PutToDict(dest, "t2mi_plp_id", value);
+		value = data->getT2MIPid();
+		if (value >= 0) PutToDict(dest, "t2mi_pid", value);
 
 		/* additional terrestrial fields */
 		value = data->getBandwidth();
@@ -126,7 +136,7 @@ void streamingDataToDict(ePyObject &dest, ePtr<iStreamData> data)
 {
 	if (dest && PyDict_Check(dest))
 	{
-		int pmt, pcr, txt, adapter, demux;
+		int pmt, pcr, txt, adapter, demux, default_audio_pid;
 		std::vector<int> video, audio, subtitle;
 		unsigned int i;
 		ePyObject l = PyList_New(0);
@@ -165,5 +175,7 @@ void streamingDataToDict(ePyObject &dest, ePtr<iStreamData> data)
 		PutToDict(dest, "adapter", adapter);
 		data->getDemuxId(demux);
 		PutToDict(dest, "demux", demux);
+		data->getDefaultAudioPid(default_audio_pid);
+		PutToDict(dest, "default_audio_pid", default_audio_pid);
 	}
 }

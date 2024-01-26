@@ -77,7 +77,7 @@ RESULT eServiceFactoryWebTS::info(const eServiceReference &ref, ePtr<iStaticServ
 
 RESULT eServiceFactoryWebTS::offlineOperations(const eServiceReference &, ePtr<iServiceOfflineOperations> &ptr)
 {
-	ptr = 0;
+	ptr = nullptr;
 	return -1;
 }
 
@@ -182,15 +182,6 @@ eServiceWebTS::~eServiceWebTS()
 
 DEFINE_REF(eServiceWebTS);
 
-static size_t crop(char *buf)
-{
-	size_t len = strlen(buf) - 1;
-	while (len > 0 && (buf[len] == '\r' || buf[len] == '\n')) {
-		buf[len--] = '\0';
-	}
-	return len;
-}
-
 static int getline(char** pbuffer, size_t* pbufsize, int fd)
 {
 	size_t i = 0;
@@ -254,7 +245,8 @@ int eServiceWebTS::openHttpConnection(std::string url)
 
 	if (connect(fd, (sockaddr*)&addr, sizeof(addr)) == -1) {
 		std::string msg = "connect failed for: " + url;
-		eDebug(msg.c_str());
+		eDebug("[eServiceWebTS] %s", msg.c_str());
+		close(fd);
 		return -1;
 	}
 
@@ -265,7 +257,10 @@ int eServiceWebTS::openHttpConnection(std::string url)
 	request.append("Connection: close\r\n");
 	request.append("\r\n");
 	//eDebug(request.c_str());
-	write(fd, request.c_str(), request.length());
+	if (write(fd, request.c_str(), request.length()) == -1)
+	{
+		eDebug("[eServiceWebTS] failed to write response %m");
+	}
 
 	int rc;
 	size_t buflen = 1000;
@@ -301,7 +296,7 @@ int eServiceWebTS::openHttpConnection(std::string url)
 	return fd;
 }
 
-RESULT eServiceWebTS::connectEvent(const Slot2<void,iPlayableService*,int> &event, ePtr<eConnection> &connection)
+RESULT eServiceWebTS::connectEvent(const sigc::slot2<void,iPlayableService*,int> &event, ePtr<eConnection> &connection)
 {
 	connection = new eConnection((iPlayableService*)this, m_event.connect(event));
 	return 0;
@@ -395,7 +390,7 @@ void eServiceWebTS::recv_event(int evt)
 		//if (m_audioInfo)
 		//	eDebug("[ServiceWebTS] %d audiostreams found", m_audioInfo->audioStreams.size());
 		if (m_audioInfo && wasnull) {
-			eDebug("[ServiceWebTS] %d audiostreams found", m_audioInfo->audioStreams.size());
+			eDebug("[ServiceWebTS] %zu audiostreams found", m_audioInfo->audioStreams.size());
 			int sel = getCurrentTrack();
 			if (sel < 0)
 				selectTrack(0);

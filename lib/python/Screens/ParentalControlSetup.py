@@ -8,10 +8,11 @@ from Screens.MessageBox import MessageBox
 from Screens.InputBox import PinInput
 from Tools.BoundFunction import boundFunction
 
+
 class ProtectedScreen:
 	def __init__(self):
 		if self.isProtected() and config.ParentalControl.servicepin[0].value:
-			self.onFirstExecBegin.append(boundFunction(self.session.openWithCallback, self.pinEntered, PinInput, pinList=[x.value for x in config.ParentalControl.servicepin], triesEntry=config.ParentalControl.retries.servicepin, title=_("Please enter the correct pin code"), windowTitle=_("Enter pin code")))
+			self.onFirstExecBegin.append(boundFunction(self.session.openWithCallback, self.pinEntered, PinInput, pinList=[x.value for x in config.ParentalControl.servicepin], triesEntry=config.ParentalControl.retries.servicepin, title=_("Please enter the correct PIN code"), windowTitle=_("Enter PIN code")))
 
 	def isProtected(self):
 		return (config.ParentalControl.servicepinactive.value or config.ParentalControl.setuppinactive.value)
@@ -20,38 +21,34 @@ class ProtectedScreen:
 		if result is None:
 			self.closeProtectedScreen()
 		elif not result:
-			self.session.openWithCallback(self.closeProtectedScreen, MessageBox, _("The pin code you entered is wrong."), MessageBox.TYPE_ERROR, timeout=3)
+			self.session.openWithCallback(self.closeProtectedScreen, MessageBox, _("The PIN code you entered is wrong."), MessageBox.TYPE_ERROR, timeout=5)
 
 	def closeProtectedScreen(self, result=None):
 		self.close(None)
 
-class ParentalControlSetup(Screen, ConfigListScreen, ProtectedScreen):
+
+class ParentalControlSetup(ConfigListScreen, ProtectedScreen, Screen):
 	def __init__(self, session):
 		Screen.__init__(self, session)
 		ProtectedScreen.__init__(self)
 		# for the skin: first try ParentalControlSetup, then Setup, this allows individual skinning
-		self.skinName = ["ParentalControlSetup", "Setup" ]
-		self.setup_title = _("Parental control setup")
-		self.setTitle(self.setup_title)
-		self.onChangedEntry = [ ]
+		self.skinName = ["ParentalControlSetup", "Setup"]
+		self.setTitle(_("Parental control setup"))
+		self.onChangedEntry = []
 
 		self.list = []
-		ConfigListScreen.__init__(self, self.list, session = self.session, on_change = self.changedEntry)
+		ConfigListScreen.__init__(self, self.list, session=self.session, on_change=self.changedEntry)
 		self.createSetup(initial=True)
 
 		self["actions"] = NumberActionMap(["SetupActions", "MenuActions"],
 		{
-		  "cancel": self.keyCancel,
-		  "save": self.keySave,
-		  "menu": self.closeRecursive,
+			"cancel": self.keyCancel,
+			"save": self.keySave,
+			"menu": self.closeRecursive,
 		}, -2)
 		self["key_red"] = StaticText(_("Cancel"))
 		self["key_green"] = StaticText(_("Save"))
 		self.recursive = False
-		self.onLayoutFinish.append(self.layoutFinished)
-
-	def layoutFinished(self):
-		self.setTitle(self.setup_title)
 
 	def isProtected(self):
 		return (not config.ParentalControl.setuppinactive.value and config.ParentalControl.servicepinactive.value) or\
@@ -73,7 +70,7 @@ class ParentalControlSetup(Screen, ConfigListScreen, ProtectedScreen):
 				self.list.append(getConfigListEntry(_("Remember service PIN"), config.ParentalControl.storeservicepin))
 				if config.ParentalControl.storeservicepin.value != "never":
 					self.list.append(getConfigListEntry(_("Hide parentel locked services"), config.ParentalControl.hideBlacklist))
-				self.list.append(getConfigListEntry(_("Protect on epg age"), config.ParentalControl.age))
+				self.list.append(getConfigListEntry(_("Protect on EPG age"), config.ParentalControl.age))
 				self.reloadLists = getConfigListEntry(_("Reload blacklists"), NoSave(ConfigNothing()))
 				self.list.append(self.reloadLists)
 			self.list.append(getConfigListEntry(_("Protect Screens"), config.ParentalControl.setuppinactive))
@@ -87,23 +84,22 @@ class ParentalControlSetup(Screen, ConfigListScreen, ProtectedScreen):
 				self.list.append(getConfigListEntry(_("Protect manufacturer reset screen"), config.ParentalControl.config_sections.manufacturer_reset))
 				self.list.append(getConfigListEntry(_("Protect movie list"), config.ParentalControl.config_sections.movie_list))
 				self.list.append(getConfigListEntry(_("Protect context menus"), config.ParentalControl.config_sections.context_menus))
-				if config.usage.menu_sort_mode.value == "user":
-						self.list.append(getConfigListEntry(_("Protect menu sort"), config.ParentalControl.config_sections.menu_sort))
+				if config.usage.menu_sort_mode.value.startswith("user"):
+					self.list.append(getConfigListEntry(_("Protect menu sort"), config.ParentalControl.config_sections.menu_sort))
 		else:
 			self.changePin = getConfigListEntry(_("Enable parental protection"), NoSave(ConfigNothing()))
 			self.list.append(self.changePin)
 		self["config"].list = self.list
-		self["config"].setList(self.list)
 
 	def keyOK(self):
 		if self["config"].l.getCurrentSelection() == self.changePin:
 			if config.ParentalControl.servicepin[0].value:
-				self.session.openWithCallback(self.oldPinEntered, PinInput, pinList=[x.value for x in config.ParentalControl.servicepin], triesEntry=config.ParentalControl.retries.servicepin, title=_("Please enter the old PIN code"), windowTitle=_("Enter pin code"))
+				self.session.openWithCallback(self.oldPinEntered, PinInput, pinList=[x.value for x in config.ParentalControl.servicepin], triesEntry=config.ParentalControl.retries.servicepin, title=_("Please enter the old PIN code"), windowTitle=_("Enter PIN code"))
 			else:
 				self.oldPinEntered(True)
 		elif self["config"].l.getCurrentSelection() == self.reloadLists:
 			from Components.ParentalControl import parentalControl
-			parentalControl.open()
+			parentalControl.open(True)
 			self.session.open(MessageBox, _("Lists reloaded!"), MessageBox.TYPE_INFO, timeout=3)
 		else:
 			ConfigListScreen.keyRight(self)
@@ -148,40 +144,25 @@ class ParentalControlSetup(Screen, ConfigListScreen, ProtectedScreen):
 	def keyNumberGlobal(self, number):
 		pass
 
-	# for summary:
-	def changedEntry(self):
-		for x in self.onChangedEntry:
-			x()
-
-	def getCurrentEntry(self):
-		return self["config"].getCurrent()[0]
-
-	def getCurrentValue(self):
-		return str(self["config"].getCurrent()[1].getText())
-
-	def createSummary(self):
-		from Screens.Setup import SetupSummary
-		return SetupSummary
-
 	def oldPinEntered(self, answer):
 		if answer:
-			self.session.openWithCallback(self.newPinEntered, PinInput, title=_("Please enter the new PIN code"), windowTitle=_("Enter pin code"))
+			self.session.openWithCallback(self.newPinEntered, PinInput, title=_("Please enter the new PIN code"), windowTitle=_("Enter PIN code"))
 		elif answer == False:
-			self.session.open(MessageBox, _("The pin code you entered is wrong."), MessageBox.TYPE_ERROR, timeout=3)
+			self.session.open(MessageBox, _("The PIN code you entered is wrong."), MessageBox.TYPE_ERROR, timeout=5)
 
 	def newPinEntered(self, answer):
 		if answer is not None:
-			self.session.openWithCallback(boundFunction(self.confirmNewPinEntered, answer), PinInput, title=_("Please re-enter the new PIN code"), windowTitle=_("Enter pin code"))
+			self.session.openWithCallback(boundFunction(self.confirmNewPinEntered, answer), PinInput, title=_("Please re-enter the new PIN code"), windowTitle=_("Enter PIN code"))
 
 	def confirmNewPinEntered(self, answer1, answer2):
 		if answer2 is not None:
 			if answer1 == answer2:
 				warning_text = ""
 				if not answer2:
-					warning_text = _("You PIN code is 0000. This is the default PIN code and it disable parental control!\n")
-				self.session.open(MessageBox, warning_text + _("The PIN code has been changed successfully."), MessageBox.TYPE_INFO, timeout=3)
+					warning_text = _("Your PIN code is 0000. This is the default PIN code and it disables parental control!\n")
+				self.session.open(MessageBox, warning_text + _("The PIN code has been changed successfully."), MessageBox.TYPE_INFO, timeout=10)
 				config.ParentalControl.servicepin[0].value = answer1
 				config.ParentalControl.servicepin[0].save()
 				self.createSetup()
 			else:
-				self.session.open(MessageBox, _("The PIN codes you entered are different."), MessageBox.TYPE_ERROR, timeout=3)
+				self.session.open(MessageBox, _("The PIN codes you entered are different."), MessageBox.TYPE_ERROR, timeout=5)

@@ -35,8 +35,6 @@
 #include "bsod.h"
 #include "version_info.h"
 
-#include <gst/gst.h>
-
 #ifdef OBJECT_DEBUG
 int object_total_remaining;
 
@@ -96,11 +94,12 @@ void keyEvent(const eRCKey &key)
 #include <lib/dvb/db.h>
 #include <lib/dvb/dvbtime.h>
 #include <lib/dvb/epgcache.h>
+#include <lib/dvb/epgtransponderdatareader.h>
 
 /* Defined in eerror.cpp */
 void setDebugTime(bool enable);
 
-class eMain: public eApplication, public Object
+class eMain: public eApplication, public sigc::trackable
 {
 	eInit init;
 	ePythonConfigQuery config;
@@ -109,6 +108,7 @@ class eMain: public eApplication, public Object
 	ePtr<eDVBResourceManager> m_mgr;
 	ePtr<eDVBLocalTimeHandler> m_locale_time_handler;
 	ePtr<eEPGCache> m_epgcache;
+	ePtr<eEPGTransponderDataReader> m_epgtransponderdatareader;
 
 public:
 	eMain()
@@ -121,6 +121,7 @@ public:
 		m_mgr = new eDVBResourceManager();
 		m_locale_time_handler = new eDVBLocalTimeHandler();
 		m_epgcache = new eEPGCache();
+		m_epgtransponderdatareader = new eEPGTransponderDataReader();
 		m_mgr->setChannelList(m_dvbdb);
 	}
 
@@ -159,6 +160,16 @@ void quitMainloop(int exitCode)
 	eApp->quit(0);
 }
 
+void pauseInit()
+{
+	eInit::pauseInit();
+}
+
+void resumeInit()
+{
+	eInit::resumeInit();
+}
+
 static void sigterm_handler(int num)
 {
 	quitMainloop(128 + num);
@@ -186,8 +197,6 @@ int main(int argc, char **argv)
 #ifdef OBJECT_DEBUG
 	atexit(object_dump);
 #endif
-
-	gst_init(&argc, &argv);
 
 	// set pythonpath if unset
 	setenv("PYTHONPATH", eEnv::resolve("${libdir}/enigma2/python").c_str(), 0);
@@ -259,17 +268,18 @@ int main(int argc, char **argv)
 			std::string rfilename;
 			snprintf(filename, sizeof(filename), "${datadir}/enigma2/skin_default/spinner/wait%d.png", i + 1);
 			rfilename = eEnv::resolve(filename);
-			loadPNG(wait[i], rfilename.c_str());
 
+			if (::access(rfilename.c_str(), R_OK) < 0)
+				break;
+
+			loadImage(wait[i], rfilename.c_str());
 			if (!wait[i])
 			{
-				if (!i)
-					eDebug("[MAIN] failed to load %s: %m", rfilename.c_str());
-				else
-					eDebug("[MAIN] found %d spinner!\n", i);
+				eDebug("[MAIN] failed to load %s: %m", rfilename.c_str());
 				break;
 			}
 		}
+		eDebug("[MAIN] found %d spinner!", i);
 		if (i)
 			my_dc->setSpinner(eRect(ePoint(100, 100), wait[0]->size()), wait, i);
 		else
@@ -278,7 +288,7 @@ int main(int argc, char **argv)
 
 	gRC::getInstance()->setSpinnerDC(my_dc);
 
-	eRCInput::getInstance()->keyEvent.connect(slot(keyEvent));
+	eRCInput::getInstance()->keyEvent.connect(sigc::ptr_fun(&keyEvent));
 
 	printf("[MAIN] executing main\n");
 
@@ -290,8 +300,7 @@ int main(int argc, char **argv)
 	/* start at full size */
 	eVideoWidget::setFullsize(true);
 
-//	python.execute("mytest", "__main__");
-	python.execFile(eEnv::resolve("${libdir}/enigma2/python/mytest.py").c_str());
+	python.execFile(eEnv::resolve("${libdir}/enigma2/python/StartEnigma.py").c_str());
 
 	/* restore both decoders to full size */
 	eVideoWidget::setFullsize(true);
@@ -341,15 +350,14 @@ const char *getBoxType()
 	return BOXTYPE;
 }
 
-const char *getGStreamerVersionString()
-{
-	return gst_version_string();
-}
-
 #include <malloc.h>
 
 void dump_malloc_stats(void)
 {
+#ifdef __GLIBC__
 	struct mallinfo mi = mallinfo();
 	eDebug("MALLOC: %d total", mi.uordblks);
+#else
+	eDebug("MALLOC: info not exposed");
+#endif
 }

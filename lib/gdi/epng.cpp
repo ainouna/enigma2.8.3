@@ -3,76 +3,22 @@
 #include <png.h>
 #include <stdio.h>
 #include <lib/base/cfile.h>
+#include <lib/base/wrappers.h>
 #include <lib/gdi/epng.h>
+#include <lib/gdi/pixmapcache.h>
 #include <unistd.h>
-
-#include <map>
-#include <string>
-#include <lib/base/elock.h>
 
 extern "C" {
 #include <jpeglib.h>
 }
 
-/* Keep a table of already-loaded pixmaps, and return the old one when
- * needed. The "dispose" method isn't very efficient, but not having
- * to load the same pixmap twice will probably make up for that.
- * There is a race condition, when two threads load the same image,
- * the worst case scenario is then that the pixmap is loaded twice. This
- * isn't any worse than before, and all the UI pixmaps will be loaded
- * from the same thread anyway. */
-
-typedef std::map<std::string, gPixmap*> NameToPixmap;
-static eSingleLock pixmapTableLock;
-static NameToPixmap pixmapTable;
-
-static void pixmapDisposed(gPixmap* pixmap)
-{
-	eSingleLocker lock(pixmapTableLock);
-	for (NameToPixmap::iterator it = pixmapTable.begin();
-		 it != pixmapTable.end();
-		 ++it)
-	{
-		 if (it->second == pixmap)
-		 {
-			 pixmapTable.erase(it);
-			 break;
-		 }
-
-	}
-}
-
-static int pixmapFromTable(ePtr<gPixmap> &result, const char *filename)
-{
-	/* Prevent a deadlock: assigning a pixmap to result may cause the
-	 * previous to be destroyed, which would call pixmapDisposed which
-	 * in turn would aquire the lock a second time. */
-	ePtr<gPixmap> disposeMeOutsideTheLock(result);
-	{
-		eSingleLocker lock(pixmapTableLock);
-		NameToPixmap::iterator it = pixmapTable.find(filename);
-		if (it != pixmapTable.end())
-		{
-			result = it->second; /* Yay, re-use the pixmap */
-			return 0;
-		}
-		else
-		{
-			return -1;
-		}
-	}
-}
-
-static void pixmapToTable(ePtr<gPixmap> &result, const char *filename)
-{
-	eSingleLocker lock(pixmapTableLock);
-	pixmapTable[filename] = result;
-}
+#include <nanosvg.h>
+#include <nanosvgrast.h>
 
 /* TODO: I wonder why this function ALWAYS returns 0 */
-int loadPNG(ePtr<gPixmap> &result, const char *filename, int accel)
+int loadPNG(ePtr<gPixmap> &result, const char *filename, int accel, int cached)
 {
-	if (pixmapFromTable(result, filename) == 0)
+	if (cached && (result = PixmapCache::Get(filename)))
 		return 0;
 
 	CFile fp(filename, "rb");
@@ -175,7 +121,7 @@ int loadPNG(ePtr<gPixmap> &result, const char *filename, int accel)
 	png_get_IHDR(png_ptr, info_ptr, &width, &height, &bit_depth, &color_type, 0, 0, 0);
 	channels = png_get_channels(png_ptr, info_ptr);
 
-	result = new gPixmap(width, height, bit_depth * channels, pixmapDisposed, accel);
+	result = new gPixmap(width, height, bit_depth * channels, cached ? PixmapCache::PixmapDisposed : NULL, accel);
 	gUnmanagedSurface *surface = result->surface;
 
 	png_bytep *rowptr = new png_bytep[height];
@@ -190,25 +136,30 @@ int loadPNG(ePtr<gPixmap> &result, const char *filename, int accel)
 		if (png_get_valid(png_ptr, info_ptr, PNG_INFO_PLTE)) {
 			png_color *palette;
 			png_get_PLTE(png_ptr, info_ptr, &palette, &num_palette);
-			if (num_palette)
+			if (num_palette) {
 				surface->clut.data = new gRGB[num_palette];
-			else
-				surface->clut.data = 0;
-			surface->clut.colors = num_palette;
+				surface->clut.colors = num_palette;
 
-			for (int i = 0; i < num_palette; i++) {
-				surface->clut.data[i].a = 0;
-				surface->clut.data[i].r = palette[i].red;
-				surface->clut.data[i].g = palette[i].green;
-				surface->clut.data[i].b = palette[i].blue;
-			}
-			if (trns) {
-				png_byte *trans;
-				png_get_tRNS(png_ptr, info_ptr, &trans, &num_trans, 0);
-				for (int i = 0; i < num_trans; i++)
-					surface->clut.data[i].a = 255 - trans[i];
-				for (int i = num_trans; i < num_palette; i++)
+				for (int i = 0; i < num_palette; i++) {
 					surface->clut.data[i].a = 0;
+					surface->clut.data[i].r = palette[i].red;
+					surface->clut.data[i].g = palette[i].green;
+					surface->clut.data[i].b = palette[i].blue;
+				}
+
+				if (trns) {
+					png_byte *trans;
+					png_get_tRNS(png_ptr, info_ptr, &trans, &num_trans, 0);
+					for (int i = 0; i < num_trans; i++)
+						surface->clut.data[i].a = 255 - trans[i];
+					for (int i = num_trans; i < num_palette; i++)
+						surface->clut.data[i].a = 0;
+				}
+
+			}
+			else {
+				surface->clut.data = 0;
+				surface->clut.colors = num_palette;
 			}
 		}
 		else {
@@ -217,7 +168,10 @@ int loadPNG(ePtr<gPixmap> &result, const char *filename, int accel)
 		}
 		surface->clut.start = 0;
 	}
-	pixmapToTable(result, filename);
+
+	if (cached)
+		PixmapCache::Set(filename, result);
+
 	//eDebug("[ePNG] %s: after  %dx%dx%dbpcx%dchan coltyp=%d cols=%d trans=%d", filename, (int)width, (int)height, bit_depth, channels, color_type, num_palette, num_trans);
 
 	png_read_end(png_ptr, end_info);
@@ -240,8 +194,16 @@ my_error_exit (j_common_ptr cinfo)
 	longjmp(myerr->setjmp_buffer, 1);
 }
 
-int loadJPG(ePtr<gPixmap> &result, const char *filename, ePtr<gPixmap> alpha)
+int loadJPG(ePtr<gPixmap> &result, const char *filename, int cached)
 {
+	return loadJPG(result, filename, ePtr<gPixmap>(), cached);
+}
+
+int loadJPG(ePtr<gPixmap> &result, const char *filename, ePtr<gPixmap> alpha, int cached)
+{
+	if (cached && (result = PixmapCache::Get(filename)))
+		return 0;
+
 	struct jpeg_decompress_struct cinfo;
 	struct my_error_mgr jerr;
 	JSAMPARRAY buffer;
@@ -291,7 +253,7 @@ int loadJPG(ePtr<gPixmap> &result, const char *filename, ePtr<gPixmap> alpha)
 		}
 	}
 
-	result = new gPixmap(eSize(cinfo.output_width, cinfo.output_height), grayscale ? 8 : 32);
+	result = new gPixmap(cinfo.output_width, cinfo.output_height, grayscale ? 8 : 32, cached ? PixmapCache::PixmapDisposed : NULL);
 
 	row_stride = cinfo.output_width * cinfo.output_components;
 	buffer = (*cinfo.mem->alloc_sarray)((j_common_ptr) &cinfo, JPOOL_IMAGE, row_stride, 1);
@@ -329,6 +291,10 @@ int loadJPG(ePtr<gPixmap> &result, const char *filename, ePtr<gPixmap> alpha)
 			}
 		}
 	}
+
+	if (cached)
+		PixmapCache::Set(filename, result);
+
 	(void) jpeg_finish_decompress(&cinfo);
 	jpeg_destroy_decompress(&cinfo);
 	return 0;
@@ -399,6 +365,101 @@ static int savePNGto(FILE *fp, gPixmap *pixmap)
 
 	png_write_end(png_ptr, info_ptr);
 	png_destroy_write_struct(&png_ptr, &info_ptr);
+	return 0;
+}
+
+int loadSVG(ePtr<gPixmap> &result, const char *filename, int cached, int width, int height, float scale)
+{
+	result = nullptr;
+	int size = 0;
+
+	if (height > 0)
+		size = height;
+	else if (scale > 0)
+		size = (int)(scale * 10);
+
+	char cachefile[strlen(filename) + 10];
+	sprintf(cachefile, "%s%d", filename, size);
+
+	if (cached && (result = PixmapCache::Get(cachefile)))
+		return 0;
+
+	NSVGimage *image = nullptr;
+	NSVGrasterizer *rast = nullptr;
+	double xscale = 1.0;
+	double yscale = 1.0;
+
+	image = nsvgParseFromFile(filename, "px", 96.0);
+	if (image == nullptr)
+		return 0;
+
+	rast = nsvgCreateRasterizer();
+	if (rast == nullptr)
+	{
+		nsvgDelete(image);
+		return 0;
+	}
+
+	if (height > 0)
+		yscale = ((double) height) / image->height;
+
+	if (width > 0)
+	{
+		xscale = ((double) width) / image->width;
+		if (height <= 0)
+		{
+			yscale = xscale;
+			height = (int)(image->height * yscale);
+		}
+	}
+	else if (height > 0)
+	{
+		xscale = yscale;
+		width = (int)(image->width * xscale);
+	}
+	else if (scale > 0)
+	{
+		xscale = (double) scale;
+		yscale = (double) scale;
+		width = (int)(image->width * scale);
+		height = (int)(image->height * scale);
+	}
+	else
+	{
+		width = (int)image->width;
+		height = (int)image->height;
+	}
+
+	result = new gPixmap(width, height, 32, cached ? PixmapCache::PixmapDisposed : NULL, -1);
+	if (result == nullptr)
+	{
+		nsvgDeleteRasterizer(rast);
+		nsvgDelete(image);
+		return 0;
+	}
+
+	eDebug("[ePNG] loadSVG %s %dx%d from %dx%d", filename, width, height, (int)image->width, (int)image->height);
+	// Rasterizes SVG image, returns RGBA image (non-premultiplied alpha)
+	nsvgRasterizeFull(rast, image, 0, 0, xscale, yscale, (unsigned char*)result->surface->data, width, height, width * 4, 1);
+
+	if (cached)
+		PixmapCache::Set(cachefile, result);
+
+	nsvgDeleteRasterizer(rast);
+	nsvgDelete(image);
+
+	return 0;
+}
+
+int loadImage(ePtr<gPixmap> &result, const char *filename, int accel, int width, int height)
+{
+	if (endsWith(filename, ".png"))
+		return loadPNG(result, filename, accel, 1);
+	else if (endsWith(filename, ".svg"))
+		return loadSVG(result, filename, 1, width, height, 0);
+	else if (endsWith(filename, ".jpg"))
+		return loadJPG(result, filename, 0);
+
 	return 0;
 }
 

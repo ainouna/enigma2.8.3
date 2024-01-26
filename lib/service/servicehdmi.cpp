@@ -52,7 +52,7 @@ RESULT eServiceFactoryHDMI::record(const eServiceReference &ref, ePtr<iRecordabl
 
 RESULT eServiceFactoryHDMI::list(const eServiceReference &, ePtr<iListableService> &ptr)
 {
-	ptr = 0;
+	ptr = nullptr;
 	return -1;
 }
 
@@ -64,7 +64,7 @@ RESULT eServiceFactoryHDMI::info(const eServiceReference &ref, ePtr<iStaticServi
 
 RESULT eServiceFactoryHDMI::offlineOperations(const eServiceReference &, ePtr<iServiceOfflineOperations> &ptr)
 {
-	ptr = 0;
+	ptr = nullptr;
 	return -1;
 }
 
@@ -114,7 +114,7 @@ eServiceHDMI::~eServiceHDMI()
 
 DEFINE_REF(eServiceHDMI);
 
-RESULT eServiceHDMI::connectEvent(const Slot2<void,iPlayableService*,int> &event, ePtr<eConnection> &connection)
+RESULT eServiceHDMI::connectEvent(const sigc::slot2<void,iPlayableService*,int> &event, ePtr<eConnection> &connection)
 {
 	connection = new eConnection((iPlayableService*)this, m_event.connect(event));
 	return 0;
@@ -188,10 +188,11 @@ eServiceHDMIRecord::eServiceHDMIRecord(const eServiceReference &ref)
 	m_target_fd = -1;
 	m_error = 0;
 	m_encoder_fd = -1;
+	m_buffersize = -1;
 	m_thread = NULL;
 }
 
-RESULT eServiceHDMIRecord::prepare(const char *filename, time_t begTime, time_t endTime, int eit_event_id, const char *name, const char *descr, const char *tags, bool descramble, bool recordecm)
+RESULT eServiceHDMIRecord::prepare(const char *filename, time_t begTime, time_t endTime, int eit_event_id, const char *name, const char *descr, const char *tags, bool descramble, bool recordecm, int packetsize)
 {
 	m_filename = filename;
 
@@ -237,7 +238,8 @@ RESULT eServiceHDMIRecord::stop()
 	if (m_state == statePrepared)
 	{
 		m_thread = NULL;
-		if (eEncoder::getInstance()) eEncoder::getInstance()->freeEncoder(m_encoder_fd);
+		if (!m_simulate && eEncoder::getInstance())
+			eEncoder::getInstance()->freeEncoder(m_encoder_fd);
 		m_encoder_fd = -1;
 		m_state = stateIdle;
 	}
@@ -249,8 +251,10 @@ int eServiceHDMIRecord::doPrepare()
 {
 	if (!m_simulate && m_encoder_fd < 0)
 	{
-		if (eEncoder::getInstance()) m_encoder_fd = eEncoder::getInstance()->allocateEncoder(m_ref.toString(), 8 * 1024 * 1024, 1280, 720, 25000, false, 0);
-		if (m_encoder_fd < 0) return -1;
+		if (eEncoder::getInstance())
+			m_encoder_fd = eEncoder::getInstance()->allocateHDMIEncoder(m_ref.toString(), m_buffersize);
+		if (m_encoder_fd < 0)
+			return -1;
 	}
 	m_state = statePrepared;
 	return 0;
@@ -279,7 +283,7 @@ int eServiceHDMIRecord::doRecord()
 			return errOpenRecordFile;
 		}
 
-		m_thread = new eDVBRecordFileThread(188, 20);
+		m_thread = new eDVBRecordFileThread(188, 20, m_buffersize);
 		m_thread->setTargetFD(fd);
 
 		m_target_fd = fd;
@@ -320,7 +324,7 @@ RESULT eServiceHDMIRecord::frontendInfo(ePtr<iFrontendInformation> &ptr)
 	return 0;
 }
 
-RESULT eServiceHDMIRecord::connectEvent(const Slot2<void,iRecordableService*,int> &event, ePtr<eConnection> &connection)
+RESULT eServiceHDMIRecord::connectEvent(const sigc::slot2<void,iRecordableService*,int> &event, ePtr<eConnection> &connection)
 {
 	connection = new eConnection((iRecordableService*)this, m_event.connect(event));
 	return 0;

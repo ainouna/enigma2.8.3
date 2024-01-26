@@ -60,13 +60,13 @@ RESULT eServiceFactoryDVD::play(const eServiceReference &ref, ePtr<iPlayableServ
 
 RESULT eServiceFactoryDVD::record(const eServiceReference &/*ref*/, ePtr<iRecordableService> &ptr)
 {
-	ptr = 0;
+	ptr = nullptr;
 	return -1;
 }
 
 RESULT eServiceFactoryDVD::list(const eServiceReference &, ePtr<iListableService> &ptr)
 {
-	ptr = 0;
+	ptr = nullptr;
 	return -1;
 }
 
@@ -79,7 +79,7 @@ RESULT eServiceFactoryDVD::info(const eServiceReference &/*ref*/, ePtr<iStaticSe
 
 RESULT eServiceFactoryDVD::offlineOperations(const eServiceReference &, ePtr<iServiceOfflineOperations> &ptr)
 {
-	ptr = 0;
+	ptr = nullptr;
 	return -1;
 }
 
@@ -438,7 +438,7 @@ eServiceDVD::~eServiceDVD()
 	disableSubtitles();
 }
 
-RESULT eServiceDVD::connectEvent(const Slot2<void,iPlayableService*,int> &event, ePtr<eConnection> &connection)
+RESULT eServiceDVD::connectEvent(const sigc::slot2<void,iPlayableService*,int> &event, ePtr<eConnection> &connection)
 {
 	connection = new eConnection((iPlayableService*)this, m_event.connect(event));
 	return 0;
@@ -980,7 +980,7 @@ RESULT eServiceDVD::cueSheet(ePtr<iCueSheet> &ptr)
 		ptr = this;
 		return 0;
 	}
-	ptr = 0;
+	ptr = nullptr;
 	return -1;
 }
 

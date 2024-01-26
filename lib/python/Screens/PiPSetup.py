@@ -7,10 +7,10 @@ from Components.config import config
 # this is not so great.
 MAX_X = 720
 MAX_Y = 576
-MAX_W = MAX_X * 3 / 4
-MAX_H = MAX_Y * 3 / 4
+MAX_W, MAX_H = SystemInfo["MaxPIPSize"]
 MIN_W = MAX_X / 8
 MIN_H = MAX_Y / 8
+
 
 def clip(val, min, max):
 	if min <= val <= max:
@@ -18,6 +18,7 @@ def clip(val, min, max):
 	if min <= val:
 		return max
 	return min
+
 
 class PiPSetup(Screen):
 	def __init__(self, session, pip):
@@ -130,8 +131,8 @@ class PiPSetup(Screen):
 		if number > 0 and self.mode == "standard":
 			colsize = MAX_X / 3
 			rowsize = MAX_Y / 3
-			col = (number-1) % 3
-			row = (number-1) / 3
+			col = (number - 1) % 3
+			row = (number - 1) / 3
 
 			self.size = (180, 135)
 

@@ -15,11 +15,19 @@
 #include <sys/stat.h>
 #include <errno.h>
 
+#include <lib/dvb/fccdecoder.h>
+
 #ifndef VIDEO_SOURCE_HDMI
 #define VIDEO_SOURCE_HDMI 2
 #endif
 #ifndef AUDIO_SOURCE_HDMI
 #define AUDIO_SOURCE_HDMI 2
+#endif
+#ifndef AUDIO_GET_PTS
+#define AUDIO_GET_PTS _IOR('o', 19, __u64)
+#endif
+#ifndef VIDEO_GET_FRAME_RATE
+#define VIDEO_GET_FRAME_RATE _IOR('o', 56, unsigned int)
 #endif
 
 DEFINE_REF(eDVBAudio);
@@ -103,6 +111,7 @@ int eDVBAudio::startPid(int pid, int type)
 			bypass = 1;
 			break;
 		case aAC3:
+		case aAC4: /* FIXME: AC4 most probably will use other bypass value */
 			bypass = 0;
 			break;
 		case aDTS:
@@ -119,6 +128,9 @@ int eDVBAudio::startPid(int pid, int type)
 			break;
 		case aDTSHD:
 			bypass = 0x10;
+			break;
+		case aDRA:
+			bypass = 0x40;
 			break;
 		case aDDP:
 #ifdef DREAMBOX
@@ -243,9 +255,9 @@ DEFINE_REF(eDVBVideo);
 
 int eDVBVideo::m_close_invalidates_attributes = -1;
 
-eDVBVideo::eDVBVideo(eDVBDemux *demux, int dev)
-	: m_demux(demux), m_dev(dev),
-	m_width(-1), m_height(-1), m_framerate(-1), m_aspect(-1), m_progressive(-1)
+eDVBVideo::eDVBVideo(eDVBDemux *demux, int dev, bool fcc_enable)
+	: m_demux(demux), m_dev(dev), m_fcc_enable(fcc_enable),
+	m_width(-1), m_height(-1), m_framerate(-1), m_aspect(-1), m_progressive(-1), m_gamma(-1)
 {
 	char filename[128];
 	sprintf(filename, "/dev/dvb/adapter%d/video%d", demux ? demux->adapter : 0, dev);
@@ -308,9 +320,13 @@ eDVBVideo::eDVBVideo(eDVBDemux *demux, int dev)
 #define VIDEO_STREAMTYPE_MPEG1 6
 #define VIDEO_STREAMTYPE_H265_HEVC 7
 #define VIDEO_STREAMTYPE_AVS 16
+#define VIDEO_STREAMTYPE_AVS2 40
 
 int eDVBVideo::startPid(int pid, int type)
 {
+	if (m_fcc_enable)
+		return 0;
+
 	if (m_fd >= 0)
 	{
 		int streamtype = VIDEO_STREAMTYPE_MPEG2;
@@ -339,6 +355,9 @@ int eDVBVideo::startPid(int pid, int type)
 			break;
 		case AVS:
 			streamtype = VIDEO_STREAMTYPE_AVS;
+			break;
+		case AVS2:
+			streamtype = VIDEO_STREAMTYPE_AVS2;
 			break;
 		}
 
@@ -401,6 +420,9 @@ int eDVBVideo::startPid(int pid, int type)
 
 void eDVBVideo::stop()
 {
+	if (m_fcc_enable)
+		return;
+
 	if (m_fd_demux >= 0)
 	{
 		eDebugNoNewLineStart("[eDVBVideo%d] DEMUX_STOP  ", m_dev);
@@ -553,13 +575,28 @@ void eDVBVideo::video_event(int)
 				eDebugNoNewLine("PROGRESSIVE_CHANGED %d\n", m_progressive);
 				/* emit */ m_event(event);
 			}
+			else if (evt.type == 17 /*VIDEO_EVENT_GAMMA_CHANGED*/)
+			{
+				struct iTSMPEGDecoder::videoEvent event;
+				event.type = iTSMPEGDecoder::videoEvent::eventGammaChanged;
+				/*
+				 * Possible gamma values
+				 * 0: Traditional gamma - SDR luminance range
+				 * 1: Traditional gamma - HDR luminance range
+				 * 2: SMPTE ST2084 (aka HDR10)
+				 * 3: Hybrid Log-gamma
+				 */
+				m_gamma = event.gamma = evt.u.frame_rate;
+				eDebugNoNewLine("GAMMA_CHANGED %d\n", m_gamma);
+				/* emit */ m_event(event);
+			}
 			else
 				eDebugNoNewLine("unhandled DVBAPI Video Event %d\n", evt.type);
 		}
 	}
 }
 
-RESULT eDVBVideo::connectEvent(const Slot1<void, struct iTSMPEGDecoder::videoEvent> &event, ePtr<eConnection> &conn)
+RESULT eDVBVideo::connectEvent(const sigc::slot1<void, struct iTSMPEGDecoder::videoEvent> &event, ePtr<eConnection> &conn)
 {
 	conn = new eConnection(this, m_event.connect(event));
 	return 0;
@@ -640,6 +677,21 @@ int eDVBVideo::getFrameRate()
 		}
 	}
 	return m_framerate;
+}
+
+int eDVBVideo::getGamma()
+{
+	/* when closing the video device invalidates the attributes, we can rely on VIDEO_EVENTs */
+	if (!m_close_invalidates_attributes)
+	{
+		if (m_gamma == -1)
+		{
+			char tmp[64];
+			sprintf(tmp, "/proc/stb/vmpeg/%d/gamma", m_dev);
+			CFile::parseIntHex(&m_gamma, tmp);
+		}
+	}
+	return m_gamma;
 }
 
 DEFINE_REF(eDVBPCR);
@@ -856,8 +908,8 @@ int eTSMPEGDecoder::setState()
 	{
 		if ((m_vpid >= 0) && (m_vpid < 0x1FFF))
 		{
-			m_video = new eDVBVideo(m_demux, m_decoder);
-			m_video->connectEvent(slot(*this, &eTSMPEGDecoder::video_event), m_video_event_conn);
+			m_video = new eDVBVideo(m_demux, m_decoder, m_fcc_enable);
+			m_video->connectEvent(sigc::mem_fun(*this, &eTSMPEGDecoder::video_event), m_video_event_conn);
 			if (m_video->startPid(m_vpid, m_vtype))
 				res = -1;
 		}
@@ -965,11 +1017,12 @@ RESULT eTSMPEGDecoder::setAC3Delay(int delay)
 eTSMPEGDecoder::eTSMPEGDecoder(eDVBDemux *demux, int decoder)
 	: m_demux(demux),
 		m_vpid(-1), m_vtype(-1), m_apid(-1), m_atype(-1), m_pcrpid(-1), m_textpid(-1),
-		m_changed(0), m_decoder(decoder), m_video_clip_fd(-1), m_showSinglePicTimer(eTimer::create(eApp))
+		m_changed(0), m_decoder(decoder), m_video_clip_fd(-1), m_showSinglePicTimer(eTimer::create(eApp)),
+		m_fcc_fd(-1), m_fcc_enable(false), m_fcc_state(fcc_state_stop), m_fcc_feid(-1), m_fcc_vpid(-1), m_fcc_vtype(-1), m_fcc_pcrpid(-1)
 {
 	if (m_demux)
 	{
-		m_demux->connectEvent(slot(*this, &eTSMPEGDecoder::demux_event), m_demux_event_conn);
+		m_demux->connectEvent(sigc::mem_fun(*this, &eTSMPEGDecoder::demux_event), m_demux_event_conn);
 	}
 	CONNECT(m_showSinglePicTimer->timeout, eTSMPEGDecoder::finishShowSinglePic);
 	m_state = stateStop;
@@ -988,6 +1041,8 @@ eTSMPEGDecoder::~eTSMPEGDecoder()
 	m_vpid = m_apid = m_pcrpid = m_textpid = pidNone;
 	m_changed = -1;
 	setState();
+	fccStop();
+	fccFreeFD();
 
 	if (m_demux && m_decoder == 0)	// Tuxtxt caching actions only on primary decoder
 		eTuxtxtApp::getInstance()->freeCache();
@@ -1217,7 +1272,8 @@ RESULT eTSMPEGDecoder::showSinglePic(const char *filename)
 				unsigned char stuffing[8192];
 				int streamtype;
 				memset(stuffing, 0, sizeof(stuffing));
-				read(f, iframe, s.st_size);
+				ssize_t ret = read(f, iframe, s.st_size);
+				if (ret < 0) eDebug("[eTSMPEGDecoder] read failed: %m");
 				if (iframe[0] == 0x00 && iframe[1] == 0x00 && iframe[2] == 0x00 && iframe[3] == 0x01 && (iframe[4] & 0x0f) == 0x07)
 					streamtype = VIDEO_STREAMTYPE_MPEG4_H264;
 				else
@@ -1233,7 +1289,7 @@ RESULT eTSMPEGDecoder::showSinglePic(const char *filename)
 					eDebug("[eTSMPEGDecoder] VIDEO_CONTINUE: %m");
 				if (ioctl(m_video_clip_fd, VIDEO_CLEAR_BUFFER) < 0)
 					eDebug("[eTSMPEGDecoder] VIDEO_CLEAR_BUFFER: %m");
-				while(pos <= (s.st_size-4) && !(seq_end_avail = (!iframe[pos] && !iframe[pos+1] && iframe[pos+2] == 1 && iframe[pos+3] == 0xB7)))
+				while(pos <= static_cast<size_t>(s.st_size-4) && !(seq_end_avail = (!iframe[pos] && !iframe[pos+1] && iframe[pos+2] == 1 && iframe[pos+3] == 0xB7)))
 					++pos;
 				if ((iframe[3] >> 4) != 0xE) // no pes header
 					writeAll(m_video_clip_fd, pes_header, sizeof(pes_header));
@@ -1241,7 +1297,10 @@ RESULT eTSMPEGDecoder::showSinglePic(const char *filename)
 					iframe[4] = iframe[5] = 0x00;
 				writeAll(m_video_clip_fd, iframe, s.st_size);
 				if (!seq_end_avail)
-					write(m_video_clip_fd, seq_end, sizeof(seq_end));
+				{
+					ret = write(m_video_clip_fd, seq_end, sizeof(seq_end));
+					if (ret < 0) eDebug("[eTSMPEGDecoder] write failed: %m");
+				}
 				writeAll(m_video_clip_fd, stuffing, 8192);
 				m_showSinglePicTimer->start(150, true);
 			}
@@ -1274,7 +1333,7 @@ void eTSMPEGDecoder::finishShowSinglePic()
 	}
 }
 
-RESULT eTSMPEGDecoder::connectVideoEvent(const Slot1<void, struct videoEvent> &event, ePtr<eConnection> &conn)
+RESULT eTSMPEGDecoder::connectVideoEvent(const sigc::slot1<void, struct videoEvent> &event, ePtr<eConnection> &conn)
 {
 	conn = new eConnection(this, m_video_event.connect(event));
 	return 0;
@@ -1318,4 +1377,248 @@ int eTSMPEGDecoder::getVideoAspect()
 	if (m_video)
 		return m_video->getAspect();
 	return -1;
+}
+
+int eTSMPEGDecoder::getVideoGamma()
+{
+	if (m_video)
+		return m_video->getGamma();
+	return -1;
+}
+
+#define FCC_SET_VPID 100
+#define FCC_SET_APID 101
+#define FCC_SET_PCRPID 102
+#define FCC_SET_VCODEC 103
+#define FCC_SET_ACODEC 104
+#define FCC_SET_FRONTEND_ID 105
+#define FCC_START 106
+#define FCC_STOP 107
+#define FCC_DECODER_START 108
+#define FCC_DECODER_STOP 109
+
+RESULT eTSMPEGDecoder::prepareFCC(int fe_id, int vpid, int vtype, int pcrpid)
+{
+	//eDebug("[eTSMPEGDecoder] prepareFCC vp : %d, vt : %d, pp : %d, fe : %d", vpid, vtype, pcrpid, fe_id); 
+
+	if ((fccGetFD() == -1) || (fccSetPids(fe_id, vpid, vtype, pcrpid) < 0) || (fccStart() < 0))
+	{
+		fccFreeFD();
+		return -1;
+	}
+
+	m_fcc_enable = true;
+
+	return 0;
+}
+
+RESULT eTSMPEGDecoder::fccDecoderStart()
+{
+	if (m_fcc_fd == -1)
+		return -1;
+
+	if (m_fcc_state != fcc_state_ready)
+	{
+		eDebug("[eTSMPEGDecoder] FCC decoder is already in decoding state.");
+		return 0;
+	}
+
+	if (ioctl(m_fcc_fd, FCC_DECODER_START) < 0)
+	{
+		eDebug("[eTSMPEGDecoder] ioctl FCC_DECODER_START failed! (%m)");
+		return -1;
+	}
+
+	m_fcc_state = fcc_state_decoding;
+
+	eDebug("[eTSMPEGDecoder] FCC_DECODER_START OK!");
+	return 0;
+}
+
+RESULT eTSMPEGDecoder::fccDecoderStop()
+{
+	if (m_fcc_fd == -1)
+		return -1;
+
+	if (m_fcc_state != fcc_state_decoding)
+	{
+		eDebug("[eTSMPEGDecoder] FCC decoder is not in decoding state.");
+	}
+	else if (ioctl(m_fcc_fd, FCC_DECODER_STOP) < 0)
+	{
+		eDebug("[eTSMPEGDecoder] ioctl FCC_DECODER_STOP failed! (%m)");
+		return -1;
+	}
+
+	m_fcc_state = fcc_state_ready;
+
+	/* stop pcr, video, audio, text */
+	finishShowSinglePic();
+
+	m_vpid = m_apid = m_pcrpid = m_textpid = pidNone;
+	m_changed = -1;
+	setState();
+
+	eDebug("[eTSMPEGDecoder] FCC_DECODER_STOP OK!");
+	return 0;
+}
+
+RESULT eTSMPEGDecoder::fccUpdatePids(int fe_id, int vpid, int vtype, int pcrpid)
+{
+	//eDebug("[eTSMPEGDecoder] vp : %d, vt : %d, pp : %d, fe : %d", vpid, vtype, pcrpid, fe_id);
+
+	if ((fe_id != m_fcc_feid) || (vpid != m_fcc_vpid) || (vtype != m_fcc_vtype) || (pcrpid != m_fcc_pcrpid))
+	{
+		fccStop();
+		if (prepareFCC(fe_id, vpid, vtype, pcrpid))
+		{
+			eDebug("[eTSMPEGDecoder] prepare FCC failed!");
+			return -1;
+		}
+	}
+	return 0;
+}
+
+RESULT eTSMPEGDecoder::fccStart()
+{
+	if (m_fcc_fd == -1)
+		return -1;
+
+	if (m_fcc_state != fcc_state_stop)
+	{
+		eDebug("[eTSMPEGDecoder] FCC is already started!");
+		return 0;
+	}
+	else if (ioctl(m_fcc_fd, FCC_START) < 0)
+	{
+		eDebug("[eTSMPEGDecoder] ioctl FCC_START failed! (%m)");
+		return -1;
+	}
+
+	eDebug("[eTSMPEGDecoder] FCC_START OK!");
+
+	m_fcc_state = fcc_state_ready;
+	return 0;
+}
+
+RESULT eTSMPEGDecoder::fccStop()
+{
+	if (m_fcc_fd == -1)
+		return -1;
+
+	if (m_fcc_state == fcc_state_stop)
+	{
+		eDebug("[eTSMPEGDecoder] FCC is already stopped!");
+		return 0;
+	}
+
+	else if (m_fcc_state == fcc_state_decoding)
+	{
+		fccDecoderStop();
+	}
+
+	if (ioctl(m_fcc_fd, FCC_STOP) < 0)
+	{
+		eDebug("[eTSMPEGDecoder] ioctl FCC_STOP failed! (%m)");
+		return -1;
+	}
+
+	m_fcc_state = fcc_state_stop;
+
+	eDebug("[eTSMPEGDecoder] FCC_STOP OK!");
+	return 0;
+}
+
+RESULT eTSMPEGDecoder::fccSetPids(int fe_id, int vpid, int vtype, int pcrpid)
+{
+	int streamtype = VIDEO_STREAMTYPE_MPEG2;
+
+	if (m_fcc_fd == -1)
+		return -1;
+
+	if (ioctl(m_fcc_fd, FCC_SET_FRONTEND_ID, fe_id) < 0)
+	{
+		eDebug("[eTSMPEGDecoder] FCC_SET_FRONTEND_ID failed! (%m)");
+		return -1;
+	}
+
+	else if(ioctl(m_fcc_fd, FCC_SET_PCRPID, pcrpid) < 0)
+	{
+		eDebug("[eTSMPEGDecoder] FCC_SET_PCRPID failed! (%m)");
+		return -1;
+	}
+
+	else if (ioctl(m_fcc_fd, FCC_SET_VPID, vpid) < 0)
+	{
+		eDebug("[eTSMPEGDecoder] FCC_SET_VPID failed! (%m)");
+		return -1;
+	}
+
+	switch(vtype)
+	{
+		default:
+		case eDVBVideo::MPEG2:
+			break;
+		case eDVBVideo::MPEG4_H264:
+			streamtype = VIDEO_STREAMTYPE_MPEG4_H264;
+			break;
+		case eDVBVideo::MPEG1:
+			streamtype = VIDEO_STREAMTYPE_MPEG1;
+			break;
+		case eDVBVideo::MPEG4_Part2:
+			streamtype = VIDEO_STREAMTYPE_MPEG4_Part2;
+			break;
+		case eDVBVideo::VC1:
+			streamtype = VIDEO_STREAMTYPE_VC1;
+			break;
+		case eDVBVideo::VC1_SM:
+			streamtype = VIDEO_STREAMTYPE_VC1_SM;
+			break;
+		case eDVBVideo::H265_HEVC:
+			streamtype = VIDEO_STREAMTYPE_H265_HEVC;
+			break;
+	}
+
+	if(ioctl(m_fcc_fd, FCC_SET_VCODEC, streamtype) < 0)
+	{
+		eDebug("[eTSMPEGDecoder] FCC_SET_VCODEC failed! (%m)");
+		return -1;
+	}
+
+	m_fcc_feid = fe_id;
+	m_fcc_vpid = vpid;
+	m_fcc_vtype = vtype;
+	m_fcc_pcrpid = pcrpid;
+
+	//eDebug("[eTSMPEGDecoder] SET PIDS OK!");
+	return 0;
+}
+
+RESULT eTSMPEGDecoder::fccGetFD()
+{
+	if (m_fcc_fd == -1)
+	{
+		eFCCDecoder* fcc = eFCCDecoder::getInstance();
+		if (fcc != NULL)
+		{
+			m_fcc_fd = fcc->allocateFcc();
+		}
+	}
+
+	return m_fcc_fd;
+}
+
+RESULT eTSMPEGDecoder::fccFreeFD()
+{
+	if (m_fcc_fd != -1)
+	{
+		eFCCDecoder* fcc = eFCCDecoder::getInstance();
+		if (fcc != NULL)
+		{
+			fcc->freeFcc(m_fcc_fd);
+			m_fcc_fd = -1;
+		}
+	}
+
+	return 0;
 }

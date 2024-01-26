@@ -6,16 +6,18 @@ from Components.Label import Label
 from Components.Pixmap import Pixmap
 from Screens.MessageBox import MessageBox
 
+
 class HarddiskSetup(Screen):
 	def __init__(self, session, hdd, action, text, question):
 		Screen.__init__(self, session)
 		self.action = action
 		self.question = question
+		self.setTitle(_("Setup hard disk"))
 		self["model"] = Label(_("Model: ") + hdd.model())
 		self["capacity"] = Label(_("Capacity: ") + hdd.capacity())
 		self["bus"] = Label(_("Bus: ") + hdd.bus())
-		self["initialize"] = Pixmap()
-		self["initializetext"] = Label(text)
+		self["key_red"] = Label(_("Cancel"))
+		self["key_green"] = Label(text) # text can be either "Initialize" or "Check"
 		self["actions"] = ActionMap(["OkCancelActions"],
 		{
 			"ok": self.hddQuestion,
@@ -23,7 +25,8 @@ class HarddiskSetup(Screen):
 		})
 		self["shortcuts"] = ActionMap(["ShortcutActions"],
 		{
-			"red": self.hddQuestion
+			"red": self.close,
+			"green": self.hddQuestion
 		})
 
 	def hddQuestion(self):
@@ -43,9 +46,11 @@ class HarddiskSetup(Screen):
 			self.session.open(MessageBox, str(ex), type=MessageBox.TYPE_ERROR, timeout=10)
 		self.close()
 
+
 class HarddiskSelection(Screen):
 	def __init__(self, session):
 		Screen.__init__(self, session)
+		self.setTitle(_("Select hard disk"))
 		self.skinName = "HarddiskSelection" # For derived classes
 		if harddiskmanager.HDDCount() == 0:
 			tlist = []
@@ -53,17 +58,24 @@ class HarddiskSelection(Screen):
 			self["hddlist"] = MenuList(tlist)
 		else:
 			self["hddlist"] = MenuList(harddiskmanager.HDDList())
+		self["key_red"] = Label(_("Cancel"))
+		self["key_green"] = Label(_("Select"))
 		self["actions"] = ActionMap(["OkCancelActions"],
 		{
 			"ok": self.okbuttonClick,
 			"cancel": self.close
 		})
+		self["shortcuts"] = ActionMap(["ShortcutActions"],
+		{
+			"red": self.close,
+			"green": self.okbuttonClick
+		})
 
 	def doIt(self, selection):
 		self.session.openWithCallback(self.close, HarddiskSetup, selection,
-			 action=selection.createInitializeJob,
-			 text=_("Initialize"),
-			 question=_("Do you really want to initialize the device?\nAll data on the disk will be lost!"))
+			action=selection.createInitializeJob,
+			text=_("Initialize"),
+			question=_("Do you really want to initialize the device?\nAll data on the disk will be lost!"))
 
 	def okbuttonClick(self):
 		selection = self["hddlist"].getCurrent()
@@ -71,16 +83,11 @@ class HarddiskSelection(Screen):
 			self.doIt(selection[1])
 
 # This is actually just HarddiskSelection but with correct type
+
+
 class HarddiskFsckSelection(HarddiskSelection):
 	def doIt(self, selection):
 		self.session.openWithCallback(self.close, HarddiskSetup, selection,
-			 action=selection.createCheckJob,
-			 text=_("Check"),
-			 question=_("Do you really want to check the filesystem?\nThis could take lots of time!"))
-
-class HarddiskConvertExt4Selection(HarddiskSelection):
-	def doIt(self, selection):
-		self.session.openWithCallback(self.close, HarddiskSetup, selection,
-			 action=selection.createExt4ConversionJob,
-			 text=_("Convert ext3 to ext4"),
-			 question=_("Do you really want to convert the filesystem?\nYou cannot go back!"))
+			action=selection.createCheckJob,
+			text=_("Check"),
+			question=_("Do you really want to check the filesystem?\nThis could take lots of time!"))

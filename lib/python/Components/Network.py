@@ -1,9 +1,12 @@
 import os
 import re
+import netifaces as ni
 from socket import *
+from enigma import eTimer
 from Components.Console import Console
 from Components.PluginComponent import plugins
 from Plugins.Plugin import PluginDescriptor
+
 
 class Network:
 	def __init__(self):
@@ -40,9 +43,9 @@ class Network:
 		return self.remoteRootFS
 
 	def isBlacklisted(self, iface):
-		return iface in ('lo', 'wifi0', 'wmaster0', 'sit0', 'tun0', 'sys0')
+		return iface in ('lo', 'wifi0', 'wmaster0', 'sit0', 'tun0', 'sys0', 'p2p0', 'wg0')
 
-	def getInterfaces(self, callback = None):
+	def getInterfaces(self, callback=None):
 		self.configuredInterfaces = []
 		for device in self.getInstalledAdapters():
 			self.getAddrInet(device, callback)
@@ -58,75 +61,31 @@ class Network:
 
 	# helper function to convert ips from a sring to a list of ints
 	def convertIP(self, ip):
-		return [ int(n) for n in ip.split('.') ]
+		return [int(n) for n in ip.split('.')]
 
 	def getAddrInet(self, iface, callback):
-		cmd = ("/sbin/ip", "/sbin/ip", "-o", "addr", "show", "dev", iface)
-		self.console.ePopen(cmd, self.IPaddrFinished, [iface, callback])
-
-	def IPaddrFinished(self, result, retval, extra_args):
-		(iface, callback ) = extra_args
-		data = { 'up': False, 'dhcp': False, 'preup' : False, 'predown' : False }
-		globalIPpattern = re.compile("scope global")
-		ipRegexp = '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'
-		netRegexp = '[0-9]{1,2}'
-		macRegexp = '[0-9a-fA-F]{2}\:[0-9a-fA-F]{2}\:[0-9a-fA-F]{2}\:[0-9a-fA-F]{2}\:[0-9a-fA-F]{2}\:[0-9a-fA-F]{2}'
-		ipLinePattern = re.compile('inet ' + ipRegexp + '/')
-		ipPattern = re.compile(ipRegexp)
-		netmaskLinePattern = re.compile('/' + netRegexp)
-		netmaskPattern = re.compile(netRegexp)
-		bcastLinePattern = re.compile(' brd ' + ipRegexp)
-		upPattern = re.compile('UP')
-		macPattern = re.compile(macRegexp)
-		macLinePattern = re.compile('link/ether ' + macRegexp)
-
-		for line in result.splitlines():
-			split = line.strip().split(' ',2)
-			if (split[1][:-1] == iface) or (split[1][:-1] == (iface + '@sys0')):
-				up = self.regExpMatch(upPattern, split[2])
-				mac = self.regExpMatch(macPattern, self.regExpMatch(macLinePattern, split[2]))
-				if up is not None:
-					data['up'] = True
-					if iface is not 'lo':
-						self.configuredInterfaces.append(iface)
-				if mac is not None:
-					data['mac'] = mac
-			if split[1] == iface:
-				if re.search(globalIPpattern, split[2]):
-					ip = self.regExpMatch(ipPattern, self.regExpMatch(ipLinePattern, split[2]))
-					netmask = self.calc_netmask(self.regExpMatch(netmaskPattern, self.regExpMatch(netmaskLinePattern, split[2])))
-					bcast = self.regExpMatch(ipPattern, self.regExpMatch(bcastLinePattern, split[2]))
-					if ip is not None:
-						data['ip'] = self.convertIP(ip)
-					if netmask is not None:
-						data['netmask'] = self.convertIP(netmask)
-					if bcast is not None:
-						data['bcast'] = self.convertIP(bcast)
-
-		if 'ip' not in data:
+		data = {'up': False, 'dhcp': False, 'preup': False, 'predown': False}
+		try:
+			if os.path.exists('/sys/class/net/%s/operstate' % iface):
+				data['up'] = int(open('/sys/class/net/%s/flags' % iface).read().strip(), 16) & 1 == 1
+			if data['up'] and iface not in self.configuredInterfaces:
+				self.configuredInterfaces.append(iface)
+			nit = ni.ifaddresses(iface)
+			data['ip'] = self.convertIP(nit[ni.AF_INET][0]['addr']) # ipv4
+			data['netmask'] = self.convertIP(nit[ni.AF_INET][0]['netmask'])
+			data['bcast'] = self.convertIP(nit[ni.AF_INET][0]['broadcast'])
+			data['mac'] = nit[ni.AF_LINK][0]['addr'] # mac
+			data['gateway'] = self.convertIP(ni.gateways()['default'][ni.AF_INET][0]) # default gw
+		except:
 			data['dhcp'] = True
 			data['ip'] = [0, 0, 0, 0]
 			data['netmask'] = [0, 0, 0, 0]
 			data['gateway'] = [0, 0, 0, 0]
-
-		cmd = "route -n | grep " + iface
-		self.console.ePopen(cmd,self.routeFinished, [iface, data, callback])
-
-	def routeFinished(self, result, retval, extra_args):
-		(iface, data, callback) = extra_args
-		ipRegexp = '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'
-		ipPattern = re.compile(ipRegexp)
-		ipLinePattern = re.compile(ipRegexp)
-
-		for line in result.splitlines():
-			print line[0:7]
-			if line[0:7] == "0.0.0.0":
-				gateway = self.regExpMatch(ipPattern, line[16:31])
-				if gateway:
-					data['gateway'] = self.convertIP(gateway)
-
-		self.ifaces[iface] = data
-		self.loadNetworkConfig(iface,callback)
+		if iface in self.ifaces:
+			self.ifaces[iface].update(data)
+		else:
+			self.ifaces[iface] = data
+		self.loadNetworkConfig(iface, callback)
 
 	def writeNetworkConfig(self):
 		self.configuredInterfaces = []
@@ -139,9 +98,10 @@ class Network:
 				fp.write("auto " + ifacename + "\n")
 				self.configuredInterfaces.append(ifacename)
 			if iface['dhcp']:
-				fp.write("iface "+ ifacename +" inet dhcp\n")
+				fp.write("iface " + ifacename + " inet dhcp\n")
+				fp.write("udhcpc_opts -T1 -t9\n")
 			if not iface['dhcp']:
-				fp.write("iface "+ ifacename +" inet static\n")
+				fp.write("iface " + ifacename + " inet static\n")
 				if 'ip' in iface:
 					print tuple(iface['ip'])
 					fp.write("	address %d.%d.%d.%d\n" % tuple(iface['ip']))
@@ -165,7 +125,7 @@ class Network:
 			fp.write("nameserver %d.%d.%d.%d\n" % tuple(nameserver))
 		fp.close()
 
-	def loadNetworkConfig(self,iface,callback = None):
+	def loadNetworkConfig(self, iface, callback=None):
 		interfaces = []
 		# parse the interfaces-file
 		try:
@@ -181,12 +141,13 @@ class Network:
 			split = i.strip().split(' ')
 			if split[0] == "iface":
 				currif = split[1]
-				ifaces[currif] = {}
-				if len(split) == 4 and split[3] == "dhcp":
-					ifaces[currif]["dhcp"] = True
-				else:
-					ifaces[currif]["dhcp"] = False
 			if currif == iface: #read information only for available interfaces
+				if currif not in ifaces:
+					ifaces[currif] = {}
+					if len(split) == 4 and split[3] == "dhcp":
+						ifaces[currif]["dhcp"] = True
+					else:
+						ifaces[currif]["dhcp"] = False
 				if split[0] == "address":
 					ifaces[currif]["address"] = map(int, split[1].split('.'))
 					if "ip" in self.ifaces[currif]:
@@ -205,7 +166,7 @@ class Network:
 				if split[0] == "pre-up":
 					if "preup" in self.ifaces[currif]:
 						self.ifaces[currif]["preup"] = i
-				if split[0] in ("pre-down","post-down"):
+				if split[0] in ("pre-down", "post-down"):
 					if "predown" in self.ifaces[currif]:
 						self.ifaces[currif]["predown"] = i
 
@@ -218,7 +179,12 @@ class Network:
 			# load ns only once
 			self.loadNameserverConfig()
 			print "read configured interface:", ifaces
-			print "self.ifaces after loading:", self.ifaces
+			# remove any password before info is printed to the debug log
+			safe_ifaces = self.ifaces.copy()
+			for intf in safe_ifaces:
+				if 'preup' in safe_ifaces[intf] and safe_ifaces[intf]['preup'] is not False:
+					safe_ifaces[intf]['preup'] = re.sub(' -k "\S*" ', ' -k ********* ', safe_ifaces[intf]['preup'])
+			print "self.ifaces after loading:", safe_ifaces
 			self.config_ready = True
 			self.msgPlugins()
 			if callback is not None:
@@ -267,16 +233,16 @@ class Network:
 			if iface not in self.wlan_interfaces:
 				name = _("WLAN connection")
 				if len(self.wlan_interfaces):
-					name += " " + str(len(self.wlan_interfaces)+1)
+					name += " " + str(len(self.wlan_interfaces) + 1)
 				self.wlan_interfaces.append(iface)
 		else:
 			if iface not in self.lan_interfaces:
 				if iface == "eth1":
 					name = _("VLAN connection")
-				else:	
-					name = _("LAN connection")	
+				else:
+					name = _("LAN connection")
 				if len(self.lan_interfaces) and not iface == "eth1":
-					name += " " + str(len(self.lan_interfaces)+1)
+					name += " " + str(len(self.lan_interfaces) + 1)
 				self.lan_interfaces.append(iface)
 		return name
 
@@ -314,7 +280,11 @@ class Network:
 			elif name.startswith('at'):
 				name = 'Atmel'
 			elif name.startswith('iwm'):
-				name = 'Intel'				
+				name = 'Intel'
+			elif name.startswith('brcm') or name.startswith('bcm'):
+				name = 'Broadcom'
+		elif os.path.isdir('/tmp/bcm/' + iface):
+			name = 'Broadcom'
 		else:
 			name = _('Unknown')
 
@@ -327,6 +297,9 @@ class Network:
 		return self.ifaces.keys()
 
 	def getAdapterAttribute(self, iface, attribute):
+		print "Getting attribute ", attribute, " for adapter", iface
+		if self.ifaces.get(iface, {}).get('up', False) and self.ifaces.get(iface, {}).get('ip', [0, 0, 0, 0]) == [0, 0, 0, 0]:
+			self.getAddrInet(iface, None)
 		return self.ifaces.get(iface, {}).get(attribute)
 
 	def setAdapterAttribute(self, iface, attribute, value):
@@ -361,7 +334,7 @@ class Network:
 				if self.nameservers[i] == oldnameserver:
 					self.nameservers[i] = newnameserver
 
-	def resetNetworkConfig(self, mode='lan', callback = None):
+	def resetNetworkConfig(self, mode='lan', callback=None):
 		self.commands = []
 		self.commands.append("/etc/init.d/avahi-daemon stop")
 		for iface in self.ifaces.keys():
@@ -377,7 +350,7 @@ class Network:
 		if not self.resetNetworkConsole.appContainers:
 			self.writeDefaultNetworkConfig(mode, callback)
 
-	def writeDefaultNetworkConfig(self,mode='lan', callback = None):
+	def writeDefaultNetworkConfig(self, mode='lan', callback=None):
 		fp = file('/etc/network/interfaces', 'w')
 		fp.write("# automatically generated by enigma2\n# do NOT change manually!\n\n")
 		fp.write("auto lo\n")
@@ -408,7 +381,7 @@ class Network:
 			self.commands.append("/sbin/ifconfig wlan0 down")
 			self.commands.append("/sbin/ifconfig ath0 down")
 		self.commands.append("/etc/init.d/avahi-daemon start")
-		self.resetNetworkConsole.eBatch(self.commands, self.resetNetworkFinished, [mode,callback], debug=True)
+		self.resetNetworkConsole.eBatch(self.commands, self.resetNetworkFinished, [mode, callback], debug=True)
 
 	def resetNetworkFinished(self, extra_args):
 		(mode, callback) = extra_args
@@ -416,13 +389,13 @@ class Network:
 			if callback is not None:
 				callback(True, mode)
 
-	def checkNetworkState(self,statecallback):
+	def checkNetworkState(self, statecallback):
 		self.NetworkState = 0
 		self.pingConsole = Console()
 		for server in ("www.openpli.org", "www.google.nl", "www.google.com"):
-			self.pingConsole.ePopen(("/bin/ping", "/bin/ping", "-c", "1", server), self.checkNetworkStateFinished,statecallback)
+			self.pingConsole.ePopen(("/bin/ping", "/bin/ping", "-c", "1", server), self.checkNetworkStateFinished, statecallback)
 
-	def checkNetworkStateFinished(self, result, retval,extra_args):
+	def checkNetworkStateFinished(self, result, retval, extra_args):
 		(statecallback) = extra_args
 		if self.pingConsole is not None:
 			if retval == 0:
@@ -433,7 +406,7 @@ class Network:
 				if not self.pingConsole.appContainers:
 					statecallback(self.NetworkState)
 
-	def restartNetwork(self,callback = None):
+	def restartNetwork(self, callback=None):
 		self.config_ready = False
 		self.msgPlugins()
 		self.commands = []
@@ -449,13 +422,13 @@ class Network:
 		self.commands.append("/etc/init.d/avahi-daemon start")
 		self.restartConsole.eBatch(self.commands, self.restartNetworkFinished, callback, debug=True)
 
-	def restartNetworkFinished(self,extra_args):
-		( callback ) = extra_args
+	def restartNetworkFinished(self, extra_args):
+		(callback) = extra_args
 		if callback is not None:
 			callback(True)
 
-	def getLinkState(self,iface,callback):
-		self.linkConsole.ePopen((self.ethtool_bin, self.ethtool_bin, iface), self.getLinkStateFinished,callback)
+	def getLinkState(self, iface, callback):
+		self.linkConsole.ePopen((self.ethtool_bin, self.ethtool_bin, iface), self.getLinkStateFinished, callback)
 
 	def getLinkStateFinished(self, result, retval, extra_args):
 		(callback) = extra_args
@@ -488,13 +461,13 @@ class Network:
 	def checkforInterface(self, iface):
 		return self.getAdapterAttribute(iface, 'up')
 
-	def checkDNSLookup(self,statecallback):
+	def checkDNSLookup(self, statecallback):
 		self.DnsState = 0
 		self.dnsConsole = Console()
 		for server in ("www.openpli.org", "www.google.nl", "www.google.com"):
 			self.dnsConsole.ePopen(("/usr/bin/nslookup", "/usr/bin/nslookup", server), self.checkDNSLookupFinished, statecallback)
 
-	def checkDNSLookupFinished(self, result, retval,extra_args):
+	def checkDNSLookupFinished(self, result, retval, extra_args):
 		(statecallback) = extra_args
 		if self.dnsConsole is not None:
 			if retval == 0:
@@ -505,15 +478,16 @@ class Network:
 				if not self.dnsConsole.appContainers:
 					statecallback(self.DnsState)
 
-	def deactivateInterface(self,ifaces,callback = None):
+	def deactivateInterface(self, ifaces, callback=None):
 		self.config_ready = False
 		self.msgPlugins()
 		commands = []
+
 		def buildCommands(iface):
 			commands.append(("/sbin/ifdown", "/sbin/ifdown", "-f", iface))
 			commands.append(("/sbin/ip", "/sbin/ip", "addr", "flush", "dev", iface, "scope", "global"))
 			#wpa_supplicant sometimes doesn't quit properly on SIGTERM
-			if os.path.exists('/var/run/wpa_supplicant/'+ iface):
+			if os.path.exists('/var/run/wpa_supplicant/' + iface):
 				commands.append("wpa_cli -i" + iface + " terminate")
 
 		if isinstance(ifaces, (list, tuple)):
@@ -526,15 +500,15 @@ class Network:
 					callback(True)
 				return
 			buildCommands(ifaces)
-		self.deactivateInterfaceConsole.eBatch(commands, self.deactivateInterfaceFinished, (ifaces,callback), debug=True)
+		self.deactivateInterfaceConsole.eBatch(commands, self.deactivateInterfaceFinished, (ifaces, callback), debug=True)
 
-	def deactivateInterfaceFinished(self,extra_args):
+	def deactivateInterfaceFinished(self, extra_args):
 		(ifaces, callback) = extra_args
 		if not self.deactivateInterfaceConsole.appContainers:
 			if callback is not None:
 				callback(True)
 
-	def activateInterface(self,iface,callback = None):
+	def activateInterface(self, iface, callback=None):
 		if self.config_ready:
 			self.config_ready = False
 			self.msgPlugins()
@@ -546,7 +520,7 @@ class Network:
 		commands.append(("/sbin/ifup", "/sbin/ifup", iface))
 		self.activateInterfaceConsole.eBatch(commands, self.activateInterfaceFinished, callback, debug=True)
 
-	def activateInterfaceFinished(self,extra_args):
+	def activateInterfaceFinished(self, extra_args):
 		callback = extra_args
 		if not self.activateInterfaceConsole.appContainers:
 			if callback is not None:
@@ -576,7 +550,7 @@ class Network:
 
 		return False
 
-	def getWlanModuleDir(self, iface = None):
+	def getWlanModuleDir(self, iface=None):
 		devicedir = self.sysfsPath(iface) + '/device'
 		if not os.path.isdir(devicedir):
 			return None
@@ -598,7 +572,7 @@ class Network:
 
 		return None
 
-	def detectWlanModule(self, iface = None):
+	def detectWlanModule(self, iface=None):
 		if not self.isWirelessInterface(iface):
 			return None
 
@@ -609,26 +583,28 @@ class Network:
 		moduledir = self.getWlanModuleDir(iface)
 		if moduledir:
 			module = os.path.basename(os.path.realpath(moduledir))
-			if module in ('ath_pci','ath5k'):
+			if module in ('ath_pci', 'ath5k'):
 				return 'madwifi'
-			if module in ('rt73','rt73'):
+			if module in ('rt73', 'rt73'):
 				return 'ralink'
 			if module == 'zd1211b':
 				return 'zydas'
+			if module == 'brcm-systemport':
+				return 'brcm-wl'
 		return 'wext'
 
-	def calc_netmask(self,nmask):
+	def calc_netmask(self, nmask):
 		from struct import pack
 		from socket import inet_ntoa
-		mask = 1L<<31
-		xnet = (1L<<32)-1
+		mask = 1L << 31
+		xnet = (1L << 32) - 1
 		cidr_range = range(0, 32)
 		cidr = long(nmask)
 		if cidr not in cidr_range:
 			print 'cidr invalid: %d' % cidr
 			return None
 		else:
-			nm = ((1L<<cidr)-1)<<(32-cidr)
+			nm = ((1L << cidr) - 1) << (32 - cidr)
 			netmask = str(inet_ntoa(pack('>L', nm)))
 			return netmask
 
@@ -652,7 +628,35 @@ class Network:
 			except KeyError:
 				pass
 
+
 iNetwork = Network()
 
+
+class NetworkCheck:
+	def __init__(self):
+		self.Timer = eTimer()
+		self.Timer.callback.append(self.startCheckNetwork)
+
+	def startCheckNetwork(self):
+		self.Timer.stop()
+		if self.Retry > 0:
+			try:
+				gws = ni.gateways()
+				if 'default' in gws and len(gws['default']) > 0:
+					print("[NetworkCheck] CheckNetwork - Done - Reload interface data")
+					iNetwork.getInterfaces()
+					return
+				self.Retry = self.Retry - 1
+				self.Timer.start(1000, True)
+			except Exception as e:
+				print("[NetworkCheck] CheckNetwork - Error: %s" % str(e))
+
+	def Start(self):
+		self.Retry = 30
+		self.Timer.start(1000, True)
+
+
 def InitNetwork():
-	pass
+	global networkCheck
+	networkCheck = NetworkCheck()
+	networkCheck.Start()
